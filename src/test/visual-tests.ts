@@ -147,5 +147,3 @@ textModel.array.splice(2, 0, 9, 9, 9);
 
 await sleepAsync(1000);
 textModel.array.splice(5, 1);
-
-

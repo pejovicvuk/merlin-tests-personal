@@ -150,7 +150,8 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
 
     onItemsChangedVirtualized() {
         console.log("Virtualized rendering not yet implemented");
-        alert("Virtualized rendering not yet implemented");
+        // For now, just use the original implementation
+        this.onItemsChangedOriginal();
     }
     
     onItemsChangedOriginal() {
@@ -305,5 +306,16 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         const prev = this.#virtualized;
         this.#virtualized = value;
         this.notifyPropertySetExplicitly('virtualized', prev, value);
+    }
+
+    static override get observedAttributes() {
+        return ['virtualized'];
+    }
+
+    override attributeChangedCallback(name: string, oldValue: string, newValue: string) {
+        super.attributeChangedCallback(name, oldValue, newValue);
+        if (name === 'virtualized') {
+            this.virtualized = newValue !== null;
+        }
     }
 }
