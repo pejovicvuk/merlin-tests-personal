@@ -1,0 +1,28 @@
+<html>
+
+<head>
+    <title>Unit Tests</title>
+    <link rel="stylesheet" href="visual-tests.css">
+    <link rel="stylesheet" href="radio.css" id="radio" disabled>
+</head>
+
+<body>
+    <template slot="item-template" id="number">
+        <text-block text="this"></text-block>
+    </template>
+    <template slot="item-template" id="Object">
+        <text-block text="this.text"></text-block>
+    </template>
+
+    <model-control id="model" enabled="this.enabled">
+
+        <h2>Items Control</h2>
+        <button-control on-click="this.addSeven(event)">Add Seven</button-control>
+        <items-control id="numbers" items="this.array" virtualized="true">
+        </items-control>
+    </model-control>
+
+    <script type="module" src="../dst/test/visual-tests.js"></script>
+</body>
+
+</html>

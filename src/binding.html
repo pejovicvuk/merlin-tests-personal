@@ -1,0 +1,99 @@
+<html>
+    <head>
+    </head>
+    <body>
+        <script type="module">
+            import { toTracked, addChangeListener, removeChangeListener, evalTracked } from "../dist/binding.js";
+
+            class ConsoleListener {
+                onChanged(obj, key) {
+                    console.log("Object key changed", obj, key);
+                }
+            }
+
+            const consoleListener = new ConsoleListener();
+
+            class A {
+                _a = 5;
+
+                get a() {
+                    return this._a;
+                }
+
+                set a(val) {
+                    this._a = val;
+                }
+
+                static test = 123;
+            }
+
+            class B extends A {
+                _b = 6;
+
+                get b() {
+                    return this._b;
+                }
+
+                set b(val) {
+                    this._b = val;
+                }
+            }
+
+            const obj = toTracked(new B());
+            
+            addChangeListener(obj, "a", consoleListener);
+            addChangeListener(obj, "_a", consoleListener);
+            addChangeListener(obj, "b", consoleListener);
+            addChangeListener(obj, "_b", consoleListener);
+
+            obj.a = 10;
+            obj.b = 20;
+
+            console.log("a = " + obj.a);
+            console.log("b = " + obj.b);
+
+            removeChangeListener(obj, "_a", consoleListener);
+            removeChangeListener(obj, "_b", consoleListener);
+
+            obj.a = 30;
+            obj.b = 40;
+
+            console.log('-------');
+
+            class C {
+                _a = 5;
+                _b = 6;
+                _c = 7;
+                _d = 8;
+
+                get a() {
+                    return this._a;
+                }
+
+                set a(val) {
+                    this._a = val;
+                }
+
+                get sum() {
+                    return this.a ? this._b : this._c + this._d;
+                }
+
+                static test = ["_a", "_b"];
+            }
+
+            const c = toTracked(new C());
+
+            const dep = [];
+            let sum = evalTracked("this.sum", c, consoleListener, dep);
+            console.log('sum = ', sum);
+            c.a = 0;
+            sum = evalTracked("this.sum", c, consoleListener, dep);
+            console.log('sum = ', sum);
+            c.a = 1;
+            sum = evalTracked("this.sum", c, consoleListener, dep);
+            console.log('sum = ', sum);
+
+            console.log(obj.constructor.test);
+        </script>
+    </body>
+</html>
