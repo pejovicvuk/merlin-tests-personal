@@ -102,7 +102,7 @@ class TextModel {
 
     async addSeven(ev: MouseEvent) {
         ev.stopPropagation();
-        this.array.push({ text: "Item 7", index: 7 });
+        this.array.push({ text: "Item 7", index: this.array.length });
     }
 
     async onButtonClicked(ev: MouseEvent) {

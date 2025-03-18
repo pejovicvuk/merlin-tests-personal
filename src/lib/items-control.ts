@@ -191,11 +191,11 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         });
 
         // 5. Create sentinel element
-        const sentinel = document.createElement('div');
-        sentinel.setAttribute('data-index', '0');
-        sentinel.style.height = '1px';
-        container.appendChild(sentinel);
-        this.#intersectionObserver.observe(sentinel);
+        const sentinelBottom = document.createElement('div');
+        sentinelBottom.setAttribute('data-index', '0');
+        sentinelBottom.style.height = '1px';
+        container.appendChild(sentinelBottom);
+        this.#intersectionObserver.observe(sentinelBottom);
     }
     
     onItemsChangedOriginal() {
