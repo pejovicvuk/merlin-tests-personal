@@ -16,6 +16,10 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
     #itemToTemplateId?: (item: any) => string;
     #virtualized = false;
 
+    // For virtualization
+    #renderedItems = new Set<number>();  // Keep track of which indices are rendered
+    #intersectionObserver?: IntersectionObserver;
+
     constructor() {
         super();
         const shadow = this.attachShadow({ mode: "open", delegatesFocus: true });
@@ -50,7 +54,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         for (const item of this.#displayedItems) {
             const ctl = this.createItemContainer();
 
-            const template = this.#getItemTemplateContent(item);
+            const template = this.#getItemTemplateContent(item);-
 
             ctl.append(template.cloneNode(true));
             ctl.model = item; // safe as we are descendant of BindableControl so if we are created then so is BindalbeControl
@@ -149,9 +153,49 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
     }
 
     onItemsChangedVirtualized() {
-        console.log("Virtualized rendering not yet implemented");
-        // For now, just use the original implementation
-        this.onItemsChangedOriginal();
+        // 1. Get items and validate
+        let items: Iterable<any> | undefined;
+        try {
+            items = this.items;
+        } catch {
+            items = undefined;
+        }
+        if (!items) return;
+
+        // 2. Clean up previous state
+        if (Array.isArray(this.#displayedItems)) {
+            const tracker = getTracker(this.#displayedItems);
+            if (tracker !== undefined) {
+                tracker[removeArrayListener](this.#onArrayChanged);
+            }
+        }
+
+        // 3. Clear existing content
+        const container = this.itemsContainer;
+        container.innerHTML = '';
+        this.#renderedItems.clear();
+
+        // 4. Set up intersection observer
+        this.#intersectionObserver?.disconnect();
+        this.#intersectionObserver = new IntersectionObserver((entries) => {
+            for (const entry of entries) {
+                if (entry.isIntersecting) {
+                    const index = parseInt(entry.target.getAttribute('data-index') || '');
+                    if (!isNaN(index)) {
+                        this.#renderItemAtIndex(index, items!);
+                    }
+                }
+            }
+        }, {
+            rootMargin: '100px 0px'
+        });
+
+        // 5. Create sentinel element
+        const sentinel = document.createElement('div');
+        sentinel.setAttribute('data-index', '0');
+        sentinel.style.height = '1px';
+        container.appendChild(sentinel);
+        this.#intersectionObserver.observe(sentinel);
     }
     
     onItemsChangedOriginal() {
@@ -168,7 +212,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         if (Array.isArray(this.#displayedItems)) {
             const tracker = getTracker(this.#displayedItems);
             if (tracker !== undefined) {
-                tracker[removeArrayListener](this.#onArrayChanged);
+                tracker[addArrayListener](this.#onArrayChanged);
             }
         }
 
@@ -317,5 +361,53 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         if (name === 'virtualized') {
             this.virtualized = newValue !== null;
         }
+    }
+
+    #renderItemAtIndex(index: number, items: Iterable<any>) {
+        // Skip if already rendered
+        if (this.#renderedItems.has(index)) return;
+
+        // Get the item at this index
+        let currentIndex = 0;
+        let targetItem;
+        for (const item of items) {
+            if (currentIndex === index) {
+                targetItem = item;
+                break;
+            }
+            currentIndex++;
+        }
+        if (targetItem === undefined) return;
+
+        // Create and setup the item container
+        const ctl = this.createItemContainer();
+        const template = this.#getItemTemplateContent(targetItem);
+        ctl.append(template.cloneNode(true));
+        ctl.model = targetItem;
+
+        // Setup slotting
+        const slotName = 'i-' + this.#slotCount++;
+        ctl.slot = slotName;
+        this.appendChild(ctl);
+
+        // Create and insert slot
+        const slot = document.createElement('slot');
+        slot.name = slotName;
+        
+        // Get the sentinel
+        const sentinel = this.itemsContainer.querySelector(`[data-index="${index}"]`);
+        if (sentinel) {
+            // Insert the slot before the sentinel
+            sentinel.before(slot);
+            // Update sentinel's index
+            sentinel.setAttribute('data-index', (index + 1).toString());
+            
+            // Re-observe the sentinel after moving it
+            this.#intersectionObserver?.unobserve(sentinel);
+            this.#intersectionObserver?.observe(sentinel);
+        }
+
+        // Mark as rendered
+        this.#renderedItems.add(index);
     }
 }
