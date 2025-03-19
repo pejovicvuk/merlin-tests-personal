@@ -86,7 +86,7 @@ class TextModel {
     // disable
     enabled = true;
 
-    array = toTracked(Array.from({ length: 10 }, (_, i) => ({ 
+    array = toTracked(Array.from({ length: 1000 }, (_, i) => ({ 
         text: `Item ${i}`,
         index: i 
     })));
