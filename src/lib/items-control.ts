@@ -215,6 +215,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
             
             const sentinelBottom = document.createElement('div');
             sentinelBottom.setAttribute('data-index', index.toString());
+            sentinelBottom.setAttribute('data-sentinel', 'bottom');
             sentinelBottom.style.height = '20px';
             sentinelBottom.style.background = 'red';
             sentinelBottom.style.border = '2px dashed black';
@@ -227,6 +228,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
 
             const sentinelTop = document.createElement('div');
             sentinelTop.setAttribute('data-index', 'top');
+            sentinelTop.setAttribute('data-sentinel', 'top');
             sentinelTop.style.height = '20px';
             sentinelTop.style.background = 'blue';
             sentinelTop.style.border = '2px dashed black';
@@ -254,11 +256,15 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                     if (entry.isIntersecting) {
                         console.log(`Observer triggered for index ${index}`);
                         this.#renderItemAtIndex(index, items);
-                        //observe again
-                        //update sentinel
                     }
                     else if(!entry.isIntersecting){
                         console.log(`Bottom sentinel not intersecting, index: ${index}`);
+                        //now, remove the items
+                        this.#removeItemAtIndex(index, items);
+                        //update sentinel
+                        entry.target.setAttribute('data-index', (index - 1).toString());
+                        this.#intersectionObserverBottom?.unobserve(entry.target);
+                        this.#intersectionObserverBottom?.observe(entry.target);
                     }
                 }
             }, {
@@ -503,7 +509,6 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         if (sentinel) {
             sentinel.before(slot);
             sentinel.setAttribute('data-index', (index + 1).toString());
-            
             this.#intersectionObserverBottom?.unobserve(sentinel);
             this.#intersectionObserverBottom?.observe(sentinel);
         } else {
@@ -540,6 +545,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                 slot.remove();
                 this.#renderedItems.delete(index);
                 this.#deletedItems.add(index);
+                
                 return;
             }
         }
