@@ -254,13 +254,15 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                     if (entry.isIntersecting) {
                         console.log(`Observer triggered for index ${index}`);
                         this.#renderItemAtIndex(index, items);
+                        //observe again
+                        //update sentinel
                     }
                     else if(!entry.isIntersecting){
                         console.log(`Bottom sentinel not intersecting, index: ${index}`);
                     }
                 }
             }, {
-                rootMargin: '200px 0px' // Increased margin for smoother scrolling
+                rootMargin: '200px 0px'
             });
             
             this.#intersectionObserverBottom.observe(sentinelBottom);
@@ -272,15 +274,12 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                     if (!entry.isIntersecting) {
                         const index = parseInt(entry.target.getAttribute('data-index') || '');
                         if (!isNaN(index)) {
-                            // Don't try to remove at index -1
-                            // Instead, find the first rendered item index
+                            // ai kod
                             if (this.#renderedItems.size > 0) {
                                 const firstRenderedIndex = Math.min(...this.#renderedItems);
                                 this.#removeItemAtIndex(firstRenderedIndex, items);
                                 console.log("Removing item at index", firstRenderedIndex);
                                 
-                                // Check if the sentinel is now visible
-                                // If not, continue removing items recursively
                                 setTimeout(() => {
                                     const sentinelRect = entry.target.getBoundingClientRect();
                                     const isVisible = (
@@ -291,7 +290,6 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                                     );
                                     
                                     if (!isVisible && this.#renderedItems.size > 0) {
-                                        // Trigger another removal if still not visible
                                         const nextFirstIndex = Math.min(...this.#renderedItems);
                                         this.#removeItemAtIndex(nextFirstIndex, items);
                                         console.log("Recursively removing next item at index", nextFirstIndex);
@@ -538,7 +536,6 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
             if (elements.length === 0) continue;
             
             if ((elements[0] as any).model === targetItem) {
-                // Remove the element and slot
                 elements[0].remove();
                 slot.remove();
                 this.#renderedItems.delete(index);
