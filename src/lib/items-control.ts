@@ -1,5 +1,5 @@
 import { BindableControl } from "./bindable-control.js";
-import { addArrayListener, getTracker, removeArrayListener } from "./dependency-tracking.js";
+import { addArrayListener, getTracker } from "./dependency-tracking.js";
 import { findTemplateById, getTypeName } from "./dom-utilities.js";
 import { HtmlControl, HtmlControlBindableProperty } from "./html-control.js";
 
@@ -39,25 +39,35 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
 
     #assignedElementsCache?: Element[];
 
-    #rebuildItems () {
+    #rebuildItems() {
+        console.log("rebuildItems called");
         this.#assignedElementsCache = undefined;
         this.#itemContainerTemplate = undefined;
+
+        // If virtualized and items have already been rendered, don't rebuild
+        if (this.virtualized && this.#renderedItems.size > 0) {
+            console.log("Skipping rebuild for virtualized content with existing items");
+            return;
+        }
 
         if (this.#displayedItems === undefined) return;
 
         const div = this.itemsContainer;
-        for (const slot of div.children) {
-            for (const el of (slot as HTMLSlotElement).assignedElements()) el.remove();
+        for (const child of div.children) {
+            if (child instanceof HTMLSlotElement) {
+                for (const el of child.assignedElements()) {
+                    el.remove();
+                }
+            }
         }
         div.innerHTML = '';
 
+        // Original non-virtualized rendering logic
         for (const item of this.#displayedItems) {
             const ctl = this.createItemContainer();
-
-            const template = this.#getItemTemplateContent(item);-
-
+            const template = this.#getItemTemplateContent(item);
             ctl.append(template.cloneNode(true));
-            ctl.model = item; // safe as we are descendant of BindableControl so if we are created then so is BindalbeControl
+            ctl.model = item;
 
             const slotName = 'i-' + this.#slotCount++;
 
@@ -153,49 +163,82 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
     }
 
     onItemsChangedVirtualized() {
-        // 1. Get items and validate
         let items: Iterable<any> | undefined;
         try {
             items = this.items;
-        } catch {
+        }
+        catch {
             items = undefined;
         }
-        if (!items) return;
 
-        // 2. Clean up previous state
+        if (items === this.#displayedItems) return;
+
         if (Array.isArray(this.#displayedItems)) {
             const tracker = getTracker(this.#displayedItems);
             if (tracker !== undefined) {
-                tracker[removeArrayListener](this.#onArrayChanged);
+                tracker[addArrayListener](this.#onArrayChanged);
             }
         }
 
-        // 3. Clear existing content
-        const container = this.itemsContainer;
-        container.innerHTML = '';
-        this.#renderedItems.clear();
+        const div = this.itemsContainer;
+        for (const slot of div.children) {
+            for (const el of (slot as HTMLSlotElement).assignedElements()) el.remove();
+        }
+        div.innerHTML = '';
 
-        // 4. Set up intersection observer
-        this.#intersectionObserver?.disconnect();
-        this.#intersectionObserver = new IntersectionObserver((entries) => {
-            for (const entry of entries) {
-                if (entry.isIntersecting) {
-                    const index = parseInt(entry.target.getAttribute('data-index') || '');
-                    if (!isNaN(index)) {
-                        this.#renderItemAtIndex(index, items!);
+        let chNum = this.children.length;
+        while (chNum-- > 0) {
+            const ch = this.children[chNum];
+
+            if (ch instanceof HTMLSlotElement && ch.name.startsWith('i-')) ch.remove();
+        }
+
+        this.#displayedItems = items;
+        this.#renderedItems.clear(); // Clear the set of rendered items
+
+        // Render initial batch of items (first 10)
+        if (items !== undefined) {
+            let count = 0;
+            let index = 0;
+            for (const _ of items) {
+                if (count >= 25) break; // Only render first 10 items
+                this.#renderItemAtIndex(index, items);
+                console.log("Rendered initial item at index", index);
+                index++;
+                count++;
+            }
+            
+            // Create sentinel for the next item after the initial batch
+            const sentinelBottom = document.createElement('div');
+            sentinelBottom.setAttribute('data-index', index.toString());
+            sentinelBottom.style.height = '20px';
+            sentinelBottom.style.background = 'red';
+            sentinelBottom.style.border = '2px dashed black';
+            sentinelBottom.textContent = 'granica';
+            sentinelBottom.style.color = 'white';
+            sentinelBottom.style.textAlign = 'center';
+            sentinelBottom.style.fontWeight = 'bold';
+            sentinelBottom.style.padding = '2px';
+            sentinelBottom.style.margin = '5px 0';
+             div.appendChild(sentinelBottom);
+            
+            this.#intersectionObserver?.disconnect();
+            this.#intersectionObserver = new IntersectionObserver((entries) => {
+                for (const entry of entries) {
+                    if (entry.isIntersecting) {
+                        const index = parseInt(entry.target.getAttribute('data-index') || '');
+                        if (!isNaN(index)) {
+                            this.#renderItemAtIndex(index, items);
+                            console.log("Rendered lazy item at index", index);
+                        }
                     }
                 }
-            }
-        }, {
-            rootMargin: '100px 0px'
-        });
-
-        // 5. Create sentinel element
-        const sentinelBottom = document.createElement('div');
-        sentinelBottom.setAttribute('data-index', '0');
-        sentinelBottom.style.height = '1px';
-        container.appendChild(sentinelBottom);
-        this.#intersectionObserver.observe(sentinelBottom);
+            }, {
+                rootMargin: '100px 0px'
+            });
+            
+            this.#intersectionObserver.observe(sentinelBottom);
+        }
     }
     
     onItemsChangedOriginal() {
@@ -364,10 +407,8 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
     }
 
     #renderItemAtIndex(index: number, items: Iterable<any>) {
-        // Skip if already rendered
         if (this.#renderedItems.has(index)) return;
 
-        // Get the item at this index
         let currentIndex = 0;
         let targetItem;
         for (const item of items) {
@@ -379,35 +420,31 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         }
         if (targetItem === undefined) return;
 
-        // Create and setup the item container
+        console.log("Actually rendering item:", targetItem);
+
         const ctl = this.createItemContainer();
         const template = this.#getItemTemplateContent(targetItem);
         ctl.append(template.cloneNode(true));
         ctl.model = targetItem;
 
-        // Setup slotting
         const slotName = 'i-' + this.#slotCount++;
         ctl.slot = slotName;
         this.appendChild(ctl);
 
-        // Create and insert slot
         const slot = document.createElement('slot');
         slot.name = slotName;
         
-        // Get the sentinel
         const sentinel = this.itemsContainer.querySelector(`[data-index="${index}"]`);
         if (sentinel) {
-            // Insert the slot before the sentinel
             sentinel.before(slot);
-            // Update sentinel's index
             sentinel.setAttribute('data-index', (index + 1).toString());
             
-            // Re-observe the sentinel after moving it
             this.#intersectionObserver?.unobserve(sentinel);
             this.#intersectionObserver?.observe(sentinel);
+        } else {
+            this.itemsContainer.appendChild(slot);
         }
 
-        // Mark as rendered
         this.#renderedItems.add(index);
     }
 }
