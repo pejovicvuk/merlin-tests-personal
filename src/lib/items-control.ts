@@ -17,11 +17,10 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
     #virtualized = false;
 
     // For virtualization
-    #renderedItems = new Set<number>();  // Keep track of which indices are rendered
-    #intersectionObserverTop?: IntersectionObserver;
+    #renderedItems = new Set<number>();
     #intersectionObserverBottom?: IntersectionObserver;
-    //#intersectionObserver?: IntersectionObserver;
     #deletedItems = new Set<number>();
+    #itemWasRecentlyDeleted = false;
 
     constructor() {
         super();
@@ -43,13 +42,11 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
     #assignedElementsCache?: Element[];
 
     #rebuildItems() {
-        console.log("rebuildItems called");
         this.#assignedElementsCache = undefined;
         this.#itemContainerTemplate = undefined;
 
         // If virtualized and items have already been rendered, don't rebuild
         if (this.virtualized && this.#renderedItems.size > 0) {
-            console.log("Skipping rebuild for virtualized content with existing items");
             return;
         }
 
@@ -159,7 +156,6 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
     }
 
     onItemsChanged() {
-        console.log("onItemsChanged called, virtualized =", this.virtualized);
         if (this.virtualized) {
             this.onItemsChangedVirtualized();
         } else {
@@ -208,7 +204,6 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
             for (const _ of items) {
                 if (count >= 100) break;
                 this.#renderItemAtIndex(index, items);
-                console.log("Rendered initial item at index", index);
                 index++;
                 count++;
             }
@@ -254,15 +249,24 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                     const index = parseInt(target.getAttribute('data-index') || '');
                     
                     if (entry.isIntersecting) {
-                        console.log(`Observer triggered for index ${index}`);
-                        this.#renderItemAtIndex(index, items);
+                        if (this.#itemWasRecentlyDeleted) {
+                            const newIndex = index + 1;
+                            target.setAttribute('data-index', newIndex.toString());
+                            console.log(`Bottom sentinel incremented: index ${index} → ${newIndex}`);
+                            this.#intersectionObserverBottom?.unobserve(target);
+                            this.#intersectionObserverBottom?.observe(target);
+                            this.#itemWasRecentlyDeleted = false; // Reset the trigger
+                            this.#renderItemAtIndex(newIndex, items);
+                        } else {
+                            this.#renderItemAtIndex(index, items);
+                        }
                     }
-                    else if(!entry.isIntersecting){
-                        console.log(`Bottom sentinel not intersecting, index: ${index}`);
-                        //now, remove the items
+                    else if(!entry.isIntersecting) {
                         this.#removeItemAtIndex(index, items);
-                        //update sentinel
+                        console.log(index);
                         entry.target.setAttribute('data-index', (index - 1).toString());
+                        console.log(`Bottom sentinel updated: index ${index} → ${index - 1}`);
+                        this.#itemWasRecentlyDeleted = true; // Set the trigger
                         this.#intersectionObserverBottom?.unobserve(entry.target);
                         this.#intersectionObserverBottom?.observe(entry.target);
                     }
@@ -272,44 +276,6 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
             });
             
             this.#intersectionObserverBottom.observe(sentinelBottom);
-
-
-            this.#intersectionObserverTop?.disconnect();
-            this.#intersectionObserverTop = new IntersectionObserver((entries) => {
-                for (const entry of entries) {
-                    if (!entry.isIntersecting) {
-                        const index = parseInt(entry.target.getAttribute('data-index') || '');
-                        if (!isNaN(index)) {
-                            // ai kod
-                            if (this.#renderedItems.size > 0) {
-                                const firstRenderedIndex = Math.min(...this.#renderedItems);
-                                this.#removeItemAtIndex(firstRenderedIndex, items);
-                                console.log("Removing item at index", firstRenderedIndex);
-                                
-                                setTimeout(() => {
-                                    const sentinelRect = entry.target.getBoundingClientRect();
-                                    const isVisible = (
-                                        sentinelRect.top >= 0 &&
-                                        sentinelRect.left >= 0 &&
-                                        sentinelRect.bottom <= (window.innerHeight || document.documentElement.clientHeight) &&
-                                        sentinelRect.right <= (window.innerWidth || document.documentElement.clientWidth)
-                                    );
-                                    
-                                    if (!isVisible && this.#renderedItems.size > 0) {
-                                        const nextFirstIndex = Math.min(...this.#renderedItems);
-                                        this.#removeItemAtIndex(nextFirstIndex, items);
-                                        console.log("Recursively removing next item at index", nextFirstIndex);
-                                    }
-                                }, 0);
-                            }
-                        }
-                    }
-                }
-            }, {
-                rootMargin: '100px 0px'
-            });
-
-            this.#intersectionObserverTop?.observe(sentinelTop);
         }
     }
     
@@ -517,7 +483,6 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
 
         this.#renderedItems.add(index);
         this.#deletedItems.delete(index);
-        console.log(`Rendered item at index ${index}`);
     }
 
     #removeItemAtIndex(index: number, items: Iterable<any>) {
@@ -533,7 +498,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
             currentIndex++;
         }
         if (targetItem === undefined) return;
-
+    
         const slots = this.itemsContainer.querySelectorAll('slot[name^="i-"]');
         
         for (const slot of slots) {
@@ -545,6 +510,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                 slot.remove();
                 this.#renderedItems.delete(index);
                 this.#deletedItems.add(index);
+                this.#itemWasRecentlyDeleted = true; // Also set the trigger here
                 
                 return;
             }
