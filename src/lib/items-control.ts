@@ -19,7 +19,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
     // For virtualization
     #renderedItems = new Set<number>();
     #intersectionObserverBottom?: IntersectionObserver;
-    #deletedItems = new Set<number>();
+    #deletedItems = new Set<number>(); 
     #itemWasRecentlyDeleted = false;
 
     constructor() {
