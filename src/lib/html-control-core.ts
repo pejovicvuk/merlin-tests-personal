@@ -71,6 +71,14 @@ export class HtmlControlCore extends HTMLElement {
     [parentOrDepthTag]?: HtmlControlCore | number; // closest ancestor HtmlControl or depth from the top of the DOM if none found. undefined if not connected
     [childrenTag]?: HtmlControlCore[];
 
+    static connects = 0;
+    static disconnects = 0;
+    static ancestorChanges = 0;
+
+    static get numAttached() {
+        return this.connects - this.disconnects;
+    }
+
     get isPartOfDom() {
         return this[parentOrDepthTag] !== undefined;
     }
@@ -80,12 +88,15 @@ export class HtmlControlCore extends HTMLElement {
     }
 
     onConnectedToDom(): void {
+        ++HtmlControlCore.connects;
     }
 
     onDisconnectedFromDom(): void {
+        ++HtmlControlCore.disconnects;
     }
 
     onAncestorsChanged(): void {
+        ++HtmlControlCore.ancestorChanges;
     }
 
     get childControls(): readonly HtmlControlCore[] {

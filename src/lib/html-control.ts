@@ -58,11 +58,13 @@ class CssDownloader extends AsyncDemux1<string, CSSStyleSheet> {
 
 const cssDownloader = new CssDownloader(true);
 
+const downlodedStyleSheets = new Map<string, CSSStyleSheet | null>();
 
 export class HtmlControl extends BindableControl implements
     HtmlControlBindableProperty<'classes', string | undefined>,
     HtmlControlBindableProperty<'states', string | undefined>,
     HtmlControlBindableProperty<'canDrag', boolean | undefined>,
+    HtmlControlBindableProperty<'adoptedStyleSheets', readonly CSSStyleSheet[] | CSSStyleSheet | undefined>,
     HtmlControlAmbientProperty<'enabled', boolean | undefined>  {
 
     readonly #scheduledEvaluations = new Map<string, number>();
@@ -70,8 +72,10 @@ export class HtmlControl extends BindableControl implements
     #numAdoptedStyleSheets?: number;
     #internals?: ElementInternals;
     #explicitEnabled?: boolean;
+    #explicitAdoptedStyleSheets?: readonly CSSStyleSheet[] | CSSStyleSheet;
+    #lastKnownAdoptedStyleSheets?: readonly CSSStyleSheet[] | CSSStyleSheet
 
-    static override readonly bindableProperties = [...BindableControl.bindableProperties, 'classes', 'states', 'canDrag'];
+    static override readonly bindableProperties = [...BindableControl.bindableProperties, 'classes', 'states', 'canDrag', 'adoptedStyleSheets'];
     static override ambientProperties = [...BindableControl.ambientProperties, 'enabled'];
     static override readonly additionalAttributes = [...BindableControl.additionalAttributes, 'style-sheets', ...map(events, x => 'on-' + x)];
 
@@ -143,6 +147,48 @@ export class HtmlControl extends BindableControl implements
         this.#evaluateStyleSheets();
     }
 
+    get adoptedStyleSheets() {
+        return this.getProperty<readonly CSSStyleSheet[] | CSSStyleSheet | undefined>('adoptedStyleSheets', this.#explicitAdoptedStyleSheets);
+    }
+
+    set adoptedStyleSheets(sheets: readonly CSSStyleSheet[] | CSSStyleSheet | undefined) {
+        const old = this.#explicitAdoptedStyleSheets;
+        this.#explicitAdoptedStyleSheets = sheets;
+        this.notifyPropertySetExplicitly('adoptedStyleSheets', old, this.#explicitAdoptedStyleSheets);
+    }
+
+    onAdoptedStyleSheetsChanged() {
+        let ss: readonly CSSStyleSheet[] | CSSStyleSheet | undefined;
+        try {
+            ss = this.adoptedStyleSheets;
+        }
+        catch{
+            ss = undefined;
+        }
+
+        if (ss === this.#lastKnownAdoptedStyleSheets) return;
+        
+        if (this.#lastKnownAdoptedStyleSheets instanceof Array) {
+            for(const sts of this.#lastKnownAdoptedStyleSheets) {
+                this.unadoptStyleSheet(sts);
+            }
+        }
+        else if (typeof this.#lastKnownAdoptedStyleSheets === 'object') {
+            this.unadoptStyleSheet(this.#lastKnownAdoptedStyleSheets);
+        }
+
+        if (ss instanceof Array) {
+            for(const sts of ss) {
+                this.adoptStyleSheet(sts);
+            }
+        }
+        else if (typeof ss === 'object') {
+            this.adoptStyleSheet(ss);
+        }
+
+        this.#lastKnownAdoptedStyleSheets = ss;
+    }
+
     get states() {
         return this.getProperty<string | undefined>('states');
     }
@@ -211,16 +257,17 @@ export class HtmlControl extends BindableControl implements
 
     #styleSheetDownloadController?: AbortController;
 
-    async #evaluateStyleSheets() {
+    #evaluateStyleSheets() {
         if (this.isPartOfDom && this.shadowRoot !== null && this.styleSheets !== null) {
-            const ac = new AbortController();
             this.#styleSheetDownloadController?.abort()
-            this.#styleSheetDownloadController = ac;
+            this.#styleSheetDownloadController = undefined;
 
             const ss = this.styleSheets;
         
+            let links: string[] | undefined = undefined;
+
             let start = 0;
-            while(start < ss.length && !ac.signal.aborted) {
+            while(start < ss.length) {
                 const maybeSpace = ss.indexOf(' ', start);
                 const space = maybeSpace < 0 ? ss.length : maybeSpace;
                 if (space === start) {
@@ -232,22 +279,31 @@ export class HtmlControl extends BindableControl implements
 
                     const link = document.getElementById(id);
                     if (link !== null && link instanceof HTMLLinkElement && link.rel === 'stylesheet' && link.href != '') {
-                        try {
-                            const sheet = await cssDownloader.call(link.href, ac.signal);
-                            if (!ac.signal.aborted) {
-                                this.shadowRoot.adoptedStyleSheets.push(sheet);
-                            }
-                        }
-                        catch(reason) {
-                            if (!ac.signal.aborted) console.error(reason);
-                        }
+                        links ??= [];
+                        links.push(link.href);
                     }
 
                     start = space + 1;
                 }
             }
 
-            if (ac === this.#styleSheetDownloadController) this.#styleSheetDownloadController = undefined;
+            if (links !== undefined) {
+                let x = 0;
+                for(; x < links.length; ++x) {
+                    const existing = downlodedStyleSheets.get(links[x]);
+                    if (existing === undefined) break;
+                    if (existing !== null) this.shadowRoot.adoptedStyleSheets.push(existing);
+                }
+
+                if (x < links.length) {
+                    links.splice(0, x);
+
+                    const ac = new AbortController();
+                    this.#styleSheetDownloadController = ac;
+
+                    this.#evaluateStyleSheetsAsync(this.shadowRoot, ac.signal, links);
+                }
+            }
         }
         else {
             this.shadowRoot?.adoptedStyleSheets.splice(this.#numAdoptedStyleSheets ?? 0);
@@ -255,6 +311,28 @@ export class HtmlControl extends BindableControl implements
             this.#styleSheetDownloadController?.abort();
             this.#styleSheetDownloadController = undefined;
         }
+    }
+
+    async #evaluateStyleSheetsAsync(shadow: ShadowRoot, sig: AbortSignal, links: readonly string[]) {
+        for(const link of links) {
+            const existing = downlodedStyleSheets.get(link);
+            if (existing !== undefined) {
+                if (existing !== null) shadow.adoptedStyleSheets.push(existing);
+            }
+            else {
+                try {
+                    const sheet = await cssDownloader.call(link, sig);
+                    if(sig.aborted) break;
+                    downlodedStyleSheets.set(link, sheet);
+                    shadow.adoptedStyleSheets.push(sheet);
+                }
+                catch(reason) {
+                    if (!sig.aborted) console.error(reason);
+                }
+            }
+        }
+
+        if (sig === this.#styleSheetDownloadController?.signal) this.#styleSheetDownloadController = undefined;
     }
 
     override attachShadow(init: ShadowRootInit): ShadowRoot {

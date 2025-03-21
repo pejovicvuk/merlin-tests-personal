@@ -8,7 +8,7 @@ export { ItemsControl } from './items-control.js';
 export { RadioButton } from './radio-button.js';
 export { TextBlock } from './text-block.js';
 export { TextInput } from './text-input.js';
-export { toTracked, IChangeTracker, IArrayChangeTracker, addArrayListener, addListener, removeArrayListener, removeListener, getTracker } from './dependency-tracking.js';
+export { toTracked, IChangeTracker, IArrayChangeTracker, addArrayListener, addListener, removeArrayListener, removeListener, getTracker, DependencyTrackingMetrics } from './dependency-tracking.js';
 export { ButtonControl } from './button-control.js';
 export { showContextMenu, MenuContent, Corner } from './menu.js';
 export { IfElse } from './ifelse.js';

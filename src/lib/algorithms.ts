@@ -20,8 +20,10 @@ export function indexOfPair<T>(arr: readonly T[], first: T, second: T) {
     return -1;
 }
 
-export function indexOfTriplet<T>(arr: readonly T[], first: T, second: T, third: T) {
-    for (let idx = 0; idx < arr.length; idx += 3) {
+export function indexOfTriplet<T>(arr: readonly T[], first: T, second: T, third: T, len?: number) {
+    len ??= arr.length;
+    
+    for (let idx = 0; idx < len; idx += 3) {
         if (arr[idx] === first && arr[idx + 1] === second && arr[idx + 2] === third) return idx;
     }
 

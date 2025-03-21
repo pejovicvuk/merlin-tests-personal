@@ -15,10 +15,91 @@
     </template>
 
     <model-control id="model" enabled="this.enabled">
+        <h1>Visual Tests</h1>
+
+        <h2>Text and Classes</h2>
+        <div class="form">
+            <span>Input:</span><text-input type="text" text="this.text" hint="this.hint"
+                choices="this.array"></text-input>
+            <span>Input:</span><text-input type="search" text="this.text" hint="this.hint"></text-input>
+            <span>Text:</span><text-block class="border-1px" text="this.text" classes="this.oddOrEven"
+                on-click="this.clicked(event)" can-drag="true">&nbsp;</text-block>
+        </div>
+
+        <model-control model="this.checkBoxes">
+            <h2>Checkboxes</h2>
+            <div>
+                <check-box checked="this.redAndBlue">Red and Blue</check-box>
+                <check-box checked="this.red">Red</check-box>
+                <check-box checked="this.blue">Blue</check-box>
+            </div>
+        </model-control>
+
+        <h2>If/Else</h2>
+        <div>
+            <if-else condition="this.checkBoxes.red">
+                <div slot="true">Red</div>
+            </if-else>
+        </div>
+
+        <h2>Pick Slot</h2>
+        <div>
+            <pick-slot case="this.oddOrEven">
+                <div slot="odd">Odd</div>
+                <div slot="even">Even</div>
+            </pick-slot>
+        </div>
+
+        <h2>Radios</h2>
+        <radio-button type="radio" value="this.radio" option="0" style-sheets="radio">Red</radio-button>
+        <radio-button type="radio" value="this.radio" option="1" style-sheets="radio">Blue</radio-button>
+
+        <h2>Pickers</h2>
+        <div class="picker">
+            Time <text-input type="time" text="this.time" required></text-input> read as: <text-block
+                text="this.time"></text-block>
+        </div>
+        <div class="picker">
+            Date <text-input type="date" text="this.date" min="this.minDate" max="this.maxDate"
+                is-valid="this.isDateValid"></text-input> read as: <text-block text="this.dateCheck"></text-block>
+        </div>
+        <div class="picker">
+            Color <text-input type="color" text="this.color"></text-input> read as: <text-block
+                text="this.color"></text-block>
+        </div>
+        <div class="picker">
+            Month <text-input type="month" text="this.month"></text-input> read as: <text-block
+                text="this.month"></text-block>
+        </div>
+
+        <h2>Number</h2>
+        Enter number from 0 to 10: <text-input type="number" size="20" text="this.number" min="0" max="10" step="2"
+            is-valid="this.numberValid"></text-input> Valid: <text-block text="this.numberValid"></text-block>
+
+        <h2>Validity</h2>
+        Enter email: <text-input type="text" size="20" text="this.email" custom-validity="this.emailCustomValidity"
+            is-valid="this.isEmailValid"></text-input> Valid: <text-block
+            text="this.emailValidationMessage"></text-block>
+
+        <h2>Enable/Disable</h2>
+        <div>
+            <check-box checked="this.enabled" enabled="true">Enabled</check-box>
+        </div>
+
+        <button-control on-click="this.onButtonClicked(event)">
+            This is a test
+        </button-control>
+
+        <h2>Items Combo</h2>
+        <select-control items="this.array" selected-index="this.selectedArrayIndex">
+        </select-control>
+
+        <h2>Content Control</h2>
+        <content-control content="this.radio">
+        </content-control>
 
         <h2>Items Control</h2>
-        <button-control on-click="this.addSeven(event)">Add Seven</button-control>
-        <items-control id="numbers" items="this.array" virtualized>
+        <items-control id="numbers" items="this.array">
         </items-control>
     </model-control>
 
