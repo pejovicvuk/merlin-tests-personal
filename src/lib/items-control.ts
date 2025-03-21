@@ -184,7 +184,6 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         this.itemsContainer.addEventListener('scroll', this.#onScroll);
 
         this.itemsContainer.style.overflow = 'auto';
-
         this.itemsContainer.style.height = '600px';
         this.itemsContainer.style.border = '1px solid red';
 
@@ -233,52 +232,103 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
     }
 
     #renderVisibleItems(items: any[]) {
-        const div = this.itemsContainer;
+        const scrollContainer: HTMLElement = this.itemsContainer;
         
-        const existingSlots = this.querySelectorAll('[slot^="i-"]');
-        existingSlots.forEach(el => el.remove());
+        if (!scrollContainer.style.height) {
+            scrollContainer.style.height = '600px';
+        }
+        scrollContainer.style.overflow = 'auto';
+        scrollContainer.style.position = 'relative';
         
-        div.innerHTML = '';
+        const itemsContainer: HTMLElement = scrollContainer.querySelector('.virtual-items-container') || (() => {
+            const el = document.createElement('div');
+            el.className = 'virtual-items-container';
+            el.style.position = 'relative';
+            scrollContainer.appendChild(el);
+            return el;
+        })();
         
-        const totalHeight: number = items.length * this.#itemHeight;
-        const container: HTMLElement = document.createElement('div');
-        container.style.height = `${totalHeight}px`; //ne radi?
-        container.style.position = 'relative';
-        container.style.width = '100%';
-        div.appendChild(container);
+        const totalHeight = items.length * this.#itemHeight;
         
-        const overscan = 5;
+        let spacer: HTMLElement = scrollContainer.querySelector('.virtual-spacer') || (() => {
+            const el = document.createElement('div');
+            el.className = 'virtual-spacer';
+            el.style.width = '1px';
+            el.style.visibility = 'hidden';
+            el.style.position = 'absolute';
+            el.style.left = '0';
+            el.style.pointerEvents = 'none';
+            scrollContainer.appendChild(el);
+            return el;
+        })();
         
-        const startWithOverscan = Math.max(0, this.#startIndex - overscan);
-        const endWithOverscan = Math.min(items.length, this.#endIndex + overscan);
+        spacer.style.height = '1px';
+        spacer.style.top = `${totalHeight}px`;
         
-        console.log(`Rendering items from ${startWithOverscan} to ${endWithOverscan} (total: ${items.length})`);
+        console.log('Total items:', items.length);
+        console.log('Item height:', this.#itemHeight);
+        console.log('Total virtual height:', totalHeight);
+        console.log('Scroll container height:', scrollContainer.offsetHeight);
+        
+        const overscan: number = 5;
+        const startWithOverscan: number = Math.max(0, this.#startIndex - overscan);
+        const endWithOverscan: number = Math.min(items.length, this.#endIndex + overscan);
+        
+        const shouldBeVisible: Set<number> = new Set<number>();
+        for (let i = startWithOverscan; i < endWithOverscan; i++) {
+            shouldBeVisible.add(i);
+        }
+        
+        const currentSlots: Map<number, HTMLElement> = new Map<number, HTMLElement>();
+        this.querySelectorAll('[slot^="i-"]').forEach(el => {
+            const index = parseInt(el.getAttribute('slot')!.substring(2));
+            currentSlots.set(index, el as HTMLElement);
+        });
+        
+        currentSlots.forEach((el, index) => {
+            if (!shouldBeVisible.has(index)) {
+                el.remove();
+                const slot = itemsContainer.querySelector(`slot[name="i-${index}"]`);
+                if (slot) slot.remove();
+            }
+        });
         
         for (let i = startWithOverscan; i < endWithOverscan; i++) {
             const item = items[i];
+            const slotName = `i-${i}`;
             
-            const ctl = this.createItemContainer();
-            const template = this.#getItemTemplateContent(item);
-            ctl.append(template.cloneNode(true));
-            ctl.model = item;
-            
-            const slotName: string = `i-${i}`;
-            ctl.slot = slotName;
-            ctl.style.width = '100%';
-            this.appendChild(ctl);
-            
-            const slot: HTMLSlotElement = document.createElement('slot');
-            slot.name = slotName;
-            slot.style.position = 'absolute';
-            slot.style.top = `${i * this.#itemHeight}px`;
-            slot.style.left = '0';
-            slot.style.right = '0';
-            slot.style.width = '100%';
-            slot.style.height = `${this.#itemHeight}px`;
-            slot.style.display = 'block';
-            
-            container.appendChild(slot);
+            if (!currentSlots.has(i)) {
+                const ctl: BindableControl = this.createItemContainer();
+                const template = this.#getItemTemplateContent(item);
+                ctl.append(template.cloneNode(true));
+                ctl.model = item;
+                ctl.slot = slotName;
+                ctl.style.width = '100%';
+                this.appendChild(ctl);
+                
+                const slot = document.createElement('slot');
+                slot.name = slotName;
+                slot.style.position = 'absolute';
+                slot.style.top = `${i * this.#itemHeight}px`;
+                slot.style.left = '0';
+                slot.style.width = '100%';
+                slot.style.height = `${this.#itemHeight}px`;
+                slot.style.display = 'block';
+                itemsContainer.appendChild(slot);
+            } else {
+                const slot = itemsContainer.querySelector(`slot[name="${slotName}"]`) as HTMLElement;
+                if (slot) {
+                    slot.style.top = `${i * this.#itemHeight}px`;
+                }
+                
+                const ctl = currentSlots.get(i) as BindableControl;
+                if (ctl.model !== item) {
+                    ctl.model = item;
+                }
+            }
         }
+        
+        console.log('Rendered items:', shouldBeVisible.size);
     }
 
     onItemsChangedOriginal() {
