@@ -20,7 +20,8 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
     //items for virtualization
     #virtualized: boolean = false;
     #scrollTop: number = 0;
-    #itemHeight: number = 16; //hardcoded for now
+    #itemHeight: number = 10;//hardcoded for now
+    #estimatedTotalHeight: number = 100;
     #windowHeight: number = 0;
     #startIndex: number = 0;
     #endIndex: number = 0;
@@ -160,6 +161,8 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         return this.shadowRoot!.querySelector('div[part="container"]')!;
     }
     #onScroll = (event: Event) => {
+        this.#estimateItemHeight();
+        console.log('Item height:', this.#itemHeight);
         this.#scrollTop = (event.target as HTMLElement).scrollTop;
         
         const newStartIndex: number = Math.floor(this.#scrollTop / this.#itemHeight);
@@ -187,23 +190,49 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         this.itemsContainer.style.height = '600px';
         this.itemsContainer.style.border = '1px solid red';
 
+        this.#estimateItemHeight();
+
         this.#windowHeight = this.itemsContainer.clientHeight; //mozda beskorisno
         this.#startIndex = Math.floor(this.#scrollTop / this.#itemHeight);
         this.#visibleItems = Math.ceil(this.#windowHeight / this.#itemHeight);
         this.#endIndex = this.#startIndex + this.#visibleItems;
     }
+    #estimateItemHeight() {
+        const visibleItems = this.querySelectorAll('[slot^="i-"]');
+        if (visibleItems.length === 0) return this.#itemHeight;
+        
+        let count: number = 0;
+        let currentMeasuredHeight: number = 0;
+        
+        visibleItems.forEach(item => {
+            const height = (item as HTMLElement).offsetHeight;
+            if (height > 0) {
+                currentMeasuredHeight += height;
+                count++;
+            }
+        });
+        
+        if (count === 0) return this.#itemHeight;
+        const currentAverage: number = currentMeasuredHeight / count;
+        
+        const previousWeight: number = this.#itemHeight > 0 ? 0.7 : 0;
+        const newWeight: number = 1 - previousWeight;
+        this.#itemHeight = (this.#itemHeight * previousWeight) + (currentAverage * newWeight);
+        
+        return this.#itemHeight;
+    }
     onItemsChangedVirtualized() {
         if (!this.#virtualized) return;
         
         this.#setupVirtualization();
-        
+
         let items: Iterable<any> | undefined;
         try {
             items = this.items;
         } catch {
             items = undefined;
         }
-        
+
         if (items === this.#displayedItems) return;
         
         if (Array.isArray(this.#displayedItems)) {
@@ -239,16 +268,10 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         }
         scrollContainer.style.overflow = 'auto';
         scrollContainer.style.position = 'relative';
+        scrollContainer.style.display = 'flex';
+        scrollContainer.style.flexDirection = 'column';
         
-        const itemsContainer: HTMLElement = scrollContainer.querySelector('.virtual-items-container') || (() => {
-            const el = document.createElement('div');
-            el.className = 'virtual-items-container';
-            el.style.position = 'relative';
-            scrollContainer.appendChild(el);
-            return el;
-        })();
-        
-        const totalHeight = items.length * this.#itemHeight;
+        this.#estimatedTotalHeight = items.length * this.#itemHeight;
         
         let spacer: HTMLElement = scrollContainer.querySelector('.virtual-spacer') || (() => {
             const el = document.createElement('div');
@@ -263,11 +286,11 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         })();
         
         spacer.style.height = '1px';
-        spacer.style.top = `${totalHeight}px`;
+        spacer.style.top = `${this.#estimatedTotalHeight}px`;
         
         console.log('Total items:', items.length);
         console.log('Item height:', this.#itemHeight);
-        console.log('Total virtual height:', totalHeight);
+        console.log('Total virtual height:', this.#estimatedTotalHeight);
         console.log('Scroll container height:', scrollContainer.offsetHeight);
         
         const overscan: number = 5;
@@ -288,7 +311,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         currentSlots.forEach((el, index) => {
             if (!shouldBeVisible.has(index)) {
                 el.remove();
-                const slot = itemsContainer.querySelector(`slot[name="i-${index}"]`);
+                const slot = scrollContainer.querySelector(`slot[name="i-${index}"]`);
                 if (slot) slot.remove();
             }
         });
@@ -303,7 +326,6 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                 ctl.append(template.cloneNode(true));
                 ctl.model = item;
                 ctl.slot = slotName;
-                ctl.style.width = '100%';
                 this.appendChild(ctl);
                 
                 const slot = document.createElement('slot');
@@ -311,16 +333,14 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                 slot.style.position = 'absolute';
                 slot.style.top = `${i * this.#itemHeight}px`;
                 slot.style.left = '0';
-                slot.style.width = '100%';
                 slot.style.height = `${this.#itemHeight}px`;
                 slot.style.display = 'block';
-                itemsContainer.appendChild(slot);
+                scrollContainer.appendChild(slot);
             } else {
-                const slot = itemsContainer.querySelector(`slot[name="${slotName}"]`) as HTMLElement;
+                const slot = scrollContainer.querySelector(`slot[name="${slotName}"]`) as HTMLElement;
                 if (slot) {
                     slot.style.top = `${i * this.#itemHeight}px`;
                 }
-                
                 const ctl = currentSlots.get(i) as BindableControl;
                 if (ctl.model !== item) {
                     ctl.model = item;
