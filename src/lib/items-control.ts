@@ -20,13 +20,13 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
     //items for virtualization
     #virtualized: boolean = false;
     #scrollTop: number = 0;
-    #itemHeight: number = 10;//hardcoded for now
-    #estimatedTotalHeight: number = 100;
+    #itemHeight: number = 0;
+    #estimatedTotalHeight: number = 0;
     #windowHeight: number = 0;
     #startIndex: number = 0;
     #endIndex: number = 0;
     #visibleItems: number = 0;
-//
+
     constructor() {
         super();
         const shadow = this.attachShadow({ mode: "open", delegatesFocus: true });
@@ -172,9 +172,6 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
             this.#visibleItems = Math.ceil(this.#windowHeight / this.#itemHeight);
             this.#endIndex = this.#startIndex + this.#visibleItems;
             
-            console.log('Scrolled to position:', this.#scrollTop);
-            console.log('New visible range:', this.#startIndex, 'to', this.#endIndex);
-            
             if (this.#displayedItems) {
                 const itemsArray = Array.isArray(this.#displayedItems) ? 
                     this.#displayedItems : Array.from(this.#displayedItems);
@@ -188,15 +185,56 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
 
         this.itemsContainer.style.overflow = 'auto';
         this.itemsContainer.style.height = '600px';
-        this.itemsContainer.style.border = '1px solid red';
+        this.itemsContainer.style.position = 'relative';
 
-        this.#estimateItemHeight();
+        //get the height of the first 100 items
+        let items: any[] = [];
+        try {
+            const itemsIterable = this.items;
+            if (itemsIterable) {
+                items = Array.isArray(itemsIterable) ? itemsIterable : Array.from(itemsIterable);
+            }
+        } catch {
+            
+        }
+        
+        if (items.length > 0) {
+            const div = this.itemsContainer;
+            div.innerHTML = '';
+            this.querySelectorAll('[slot^="i-"]').forEach(el => el.remove());
+            
+            const sampleSize: number = Math.min(100, items.length);
+            
+            for (let i = 0; i < sampleSize; i++) {
+                const item = items[i];
+                
+                const ctl: BindableControl = this.createItemContainer();
+                const template = this.#getItemTemplateContent(item);
+                ctl.append(template.cloneNode(true));
+                ctl.model = item;
 
-        this.#windowHeight = this.itemsContainer.clientHeight; //mozda beskorisno
+                const slotName: string = 'i-' + this.#slotCount++;
+
+                ctl.slot = slotName;
+                this.appendChild(ctl);
+
+                const slot = document.createElement('slot');
+                slot.name = slotName;
+                div.appendChild(slot);
+            }
+            
+            div.offsetHeight;
+            this.#estimateItemHeight();
+
+            div.innerHTML = '';
+            this.querySelectorAll('[slot^="i-"]').forEach(el => el.remove());
+        }
+        this.#windowHeight = this.itemsContainer.clientHeight;
         this.#startIndex = Math.floor(this.#scrollTop / this.#itemHeight);
         this.#visibleItems = Math.ceil(this.#windowHeight / this.#itemHeight);
         this.#endIndex = this.#startIndex + this.#visibleItems;
     }
+
     #estimateItemHeight() {
         const visibleItems = this.querySelectorAll('[slot^="i-"]');
         if (visibleItems.length === 0) return this.#itemHeight;

@@ -7,7 +7,7 @@ class TextModel {
     // disable
     enabled = true;
 
-    array = toTracked(Array.from({ length: 1000000 }, (_, i) => ({ 
+    array = toTracked(Array.from({ length: 10000000 }, (_, i) => ({ 
         text: `Item ${i}`,
         index: i 
     })));
@@ -21,10 +21,6 @@ class TextModel {
         this._selectedArrayIndex = val;
     }
 
-    async addSeven(ev: MouseEvent) {
-        ev.stopPropagation();
-        this.array.push({ text: "Item 7", index: this.array.length });
-    }
 }
 
 const textModel = toTracked(new TextModel());
