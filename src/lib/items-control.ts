@@ -27,6 +27,8 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
     #endIndex: number = 0;
     #visibleItems: number = 0;
     #spacerElement: HTMLElement | null = null;
+    #scrollAnimationFrame: number | null = null;
+    #lastHeightUpdateTime: number | null = null;
 
     constructor() {
         super();
@@ -162,22 +164,36 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         return this.shadowRoot!.querySelector('div[part="container"]')!;
     }
     #onScroll = (event: Event) => {
-        this.#estimateItemHeight();
-        console.log('Item height:', this.#itemHeight);
-        this.#scrollTop = (event.target as HTMLElement).scrollTop;
+        // Store the current scroll position
+        const scrollContainer = event.target as HTMLElement;
+        this.#scrollTop = scrollContainer.scrollTop;
         
-        const newStartIndex: number = Math.floor(this.#scrollTop / this.#itemHeight);
-        
-        if (newStartIndex !== this.#startIndex) {
-            this.#startIndex = newStartIndex;
-            this.#visibleItems = Math.ceil(this.#windowHeight / this.#itemHeight);
-            this.#endIndex = this.#startIndex + this.#visibleItems;
-            
-            if (this.#displayedItems) {
-                const itemsArray = Array.isArray(this.#displayedItems) ? 
-                    this.#displayedItems : Array.from(this.#displayedItems);
-                this.#renderVisibleItems(itemsArray);
-            }
+        // Use requestAnimationFrame to limit updates to the browser's refresh rate
+        if (!this.#scrollAnimationFrame) {
+            this.#scrollAnimationFrame = requestAnimationFrame(() => {
+                this.#scrollAnimationFrame = null;
+                
+                // Only update item height occasionally, not on every scroll
+                if (!this.#lastHeightUpdateTime || (Date.now() - this.#lastHeightUpdateTime > 1000)) {
+                    this.#estimateItemHeight();
+                    this.#lastHeightUpdateTime = Date.now();
+                }
+                
+                const newStartIndex = Math.floor(this.#scrollTop / this.#itemHeight);
+                
+                // Only update if we've scrolled enough to show different items
+                if (Math.abs(newStartIndex - this.#startIndex) >= 1) {
+                    this.#startIndex = newStartIndex;
+                    this.#visibleItems = Math.ceil(this.#windowHeight / this.#itemHeight);
+                    this.#endIndex = this.#startIndex + this.#visibleItems;
+                    
+                    if (this.#displayedItems) {
+                        const itemsArray = Array.isArray(this.#displayedItems) ? 
+                            this.#displayedItems : Array.from(this.#displayedItems);
+                        this.#renderVisibleItems(itemsArray);
+                    }
+                }
+            });
         }
     };
     #setupVirtualization() {
