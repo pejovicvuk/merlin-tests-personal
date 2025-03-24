@@ -182,7 +182,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
     };
     #setupVirtualization() {
         this.itemsContainer.removeEventListener('scroll', this.#onScroll);
-        this.itemsContainer.addEventListener('scroll', this.#onScroll);
+        this.itemsContainer.addEventListener('scroll', this.#onScroll, { passive: true });
 
         this.itemsContainer.style.overflow = 'auto';
         this.itemsContainer.style.height = '600px';
@@ -319,15 +319,16 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         }
         scrollContainer.style.overflow = 'auto';
         scrollContainer.style.position = 'relative';
-        scrollContainer.style.display = 'flex';
-        scrollContainer.style.flexDirection = 'column';
+        
+        // Remove flex layout which can interfere with natural element flow
+        scrollContainer.style.display = 'block';
         
         this.#estimatedTotalHeight = items.length * this.#itemHeight;
         
-        // Use the existing spacer element
+        // We don't need the spacer element anymore as we'll use padding
         if (this.#spacerElement) {
-            this.#spacerElement.style.height = '1px';
-            this.#spacerElement.style.top = `${this.#estimatedTotalHeight}px`;
+            this.#spacerElement.remove();
+            this.#spacerElement = null;
         }
         
         console.log('Total items:', items.length);
@@ -358,7 +359,25 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
             }
         });
         
-        for (let i = startWithOverscan; i < endWithOverscan; i++) {
+        // Create an array of indices to render in the correct order
+        const indicesToRender = Array.from(shouldBeVisible).sort((a, b) => a - b);
+        
+        // Create a container for the visible range with padding above and below
+        const fragment = document.createDocumentFragment();
+        let container = document.createElement('div');
+        
+        // Add padding at the top to represent items above the visible area
+        const paddingTop = startWithOverscan * this.#itemHeight;
+        container.style.paddingTop = `${paddingTop}px`;
+        
+        // Add padding at the bottom to represent items below the visible area
+        const itemsBelow = items.length - endWithOverscan;
+        const paddingBottom = itemsBelow * this.#itemHeight;
+        container.style.paddingBottom = `${paddingBottom}px`;
+        
+        fragment.appendChild(container);
+        
+        for (const i of indicesToRender) {
             const item = items[i];
             const slotName = `i-${i}`;
             
@@ -373,16 +392,27 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                 const slot = document.createElement('slot');
                 slot.name = slotName;
                 slot.style.display = 'block';
-                scrollContainer.appendChild(slot);
+                container.appendChild(slot);
             } else {
                 const ctl = currentSlots.get(i) as BindableControl;
                 if (ctl.model !== item) {
                     ctl.model = item;
                 }
+                
+                // Move the existing slot to the container
+                const slot = scrollContainer.querySelector(`slot[name="${slotName}"]`);
+                if (slot) {
+                    container.appendChild(slot);
+                }
             }
         }
         
+        // Clear the container and add our fragment
+        scrollContainer.innerHTML = '';
+        scrollContainer.appendChild(fragment);
+        
         console.log('Rendered items:', shouldBeVisible.size);
+        console.log('Padding top:', paddingTop, 'Padding bottom:', paddingBottom);
     }
 
     onItemsChangedOriginal() {
