@@ -164,24 +164,22 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         return this.shadowRoot!.querySelector('div[part="container"]')!;
     }
     #onScroll = (event: Event) => {
-        // Store the current scroll position
         const scrollContainer = event.target as HTMLElement;
         this.#scrollTop = scrollContainer.scrollTop;
         
-        // Use requestAnimationFrame to limit updates to the browser's refresh rate
         if (!this.#scrollAnimationFrame) {
             this.#scrollAnimationFrame = requestAnimationFrame(() => {
                 this.#scrollAnimationFrame = null;
                 
-                // Only update item height occasionally, not on every scroll
-                if (!this.#lastHeightUpdateTime || (Date.now() - this.#lastHeightUpdateTime > 1000)) {
+                // uspori updatovanje visine itema(popravi algoritam estimateItemHeight)
+                if (!this.#lastHeightUpdateTime || (Date.now() - this.#lastHeightUpdateTime > 500)) {
                     this.#estimateItemHeight();
                     this.#lastHeightUpdateTime = Date.now();
                 }
                 
+                
                 const newStartIndex = Math.floor(this.#scrollTop / this.#itemHeight);
                 
-                // Only update if we've scrolled enough to show different items
                 if (Math.abs(newStartIndex - this.#startIndex) >= 1) {
                     this.#startIndex = newStartIndex;
                     this.#visibleItems = Math.ceil(this.#windowHeight / this.#itemHeight);
@@ -204,7 +202,6 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         this.itemsContainer.style.height = '600px';
         this.itemsContainer.style.position = 'relative';
 
-        //get the height of the first 100 items
         let items: any[] = [];
         try {
             const itemsIterable = this.items;
@@ -356,7 +353,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         const startWithOverscan: number = Math.max(0, this.#startIndex - overscan);
         const endWithOverscan: number = Math.min(items.length, this.#endIndex + overscan);
         
-        const shouldBeVisible: Set<number> = new Set<number>();
+        const shouldBeVisible: Set<number> = new Set<number>();//skloni ovo, oslanja se da se itemi ne menjaju
         for (let i = startWithOverscan; i < endWithOverscan; i++) {
             shouldBeVisible.add(i);
         }
@@ -415,7 +412,6 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                     ctl.model = item;
                 }
                 
-                // Move the existing slot to the container
                 const slot = scrollContainer.querySelector(`slot[name="${slotName}"]`);
                 if (slot) {
                     container.appendChild(slot);
