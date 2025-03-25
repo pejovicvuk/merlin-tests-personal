@@ -26,9 +26,6 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
     #startIndex: number = 0;
     #endIndex: number = 0;
     #visibleItems: number = 0;
-    #spacerElement: HTMLElement | null = null;
-    #scrollAnimationFrame: number | null = null;
-    #lastHeightUpdateTime: number | null = null;
 
     constructor() {
         super();
@@ -166,36 +163,21 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
     #onScroll = (event: Event) => {
         const scrollContainer = event.target as HTMLElement;
         this.#scrollTop = scrollContainer.scrollTop;
+        const newStartIndex = Math.floor(this.#scrollTop / this.#itemHeight);
         
-        if (!this.#scrollAnimationFrame) {
-            this.#scrollAnimationFrame = requestAnimationFrame(() => {
-                this.#scrollAnimationFrame = null;
-                
-                // uspori updatovanje visine itema(popravi algoritam estimateItemHeight)
-                if (!this.#lastHeightUpdateTime || (Date.now() - this.#lastHeightUpdateTime > 500)) {
-                    this.#estimateItemHeight();
-                    this.#lastHeightUpdateTime = Date.now();
-                }
-                
-                
-                const newStartIndex = Math.floor(this.#scrollTop / this.#itemHeight);
-                
-                if (Math.abs(newStartIndex - this.#startIndex) >= 1) {
-                    this.#startIndex = newStartIndex;
-                    this.#visibleItems = Math.ceil(this.#windowHeight / this.#itemHeight);
-                    this.#endIndex = this.#startIndex + this.#visibleItems;
-                    
-                    if (this.#displayedItems) {
-                        const itemsArray = Array.isArray(this.#displayedItems) ? 
-                            this.#displayedItems : Array.from(this.#displayedItems);
-                        this.#renderVisibleItems(itemsArray);
-                    }
-                }
-            });
+        if (Math.abs(newStartIndex - this.#startIndex) >= 1) {
+            this.#startIndex = newStartIndex;
+            this.#visibleItems = Math.ceil(this.#windowHeight / this.#itemHeight);
+            this.#endIndex = this.#startIndex + this.#visibleItems;
+            
+            if (this.#displayedItems) {
+                const itemsArray = Array.isArray(this.#displayedItems) ? 
+                    this.#displayedItems : Array.from(this.#displayedItems);
+                this.#renderVisibleItems(itemsArray);
+            }
         }
     };
     #setupVirtualization() {
-        this.itemsContainer.removeEventListener('scroll', this.#onScroll);
         this.itemsContainer.addEventListener('scroll', this.#onScroll, { passive: true });
 
         this.itemsContainer.style.overflow = 'auto';
@@ -209,20 +191,18 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                 items = Array.isArray(itemsIterable) ? itemsIterable : Array.from(itemsIterable);
             }
         } catch {
-            
         }
         
-        if (items.length > 0) {
+        if (items.length > 0 && this.#itemHeight === 0) {
             const div = this.itemsContainer;
             div.innerHTML = '';
-            this.querySelectorAll('[slot^="i-"]').forEach(el => el.remove());
             
             const sampleSize: number = Math.min(100, items.length);
             
             for (let i = 0; i < sampleSize; i++) {
                 const item = items[i];
-                
-                const ctl: BindableControl = this.createItemContainer();
+
+                const ctl = this.createItemContainer();
                 const template = this.#getItemTemplateContent(item);
                 ctl.append(template.cloneNode(true));
                 ctl.model = item;
@@ -236,13 +216,12 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                 slot.name = slotName;
                 div.appendChild(slot);
             }
-            
-            div.offsetHeight;
             this.#estimateItemHeight();
 
             div.innerHTML = '';
             this.querySelectorAll('[slot^="i-"]').forEach(el => el.remove());
         }
+        
         this.#windowHeight = this.itemsContainer.clientHeight;
         this.#startIndex = Math.floor(this.#scrollTop / this.#itemHeight);
         this.#visibleItems = Math.ceil(this.#windowHeight / this.#itemHeight);
@@ -254,22 +233,18 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         if (visibleItems.length === 0) return this.#itemHeight;
         
         let count: number = 0;
-        let currentMeasuredHeight: number = 0;
+        let totalHeight: number = 0;
         
-        visibleItems.forEach(item => {
+        for (const item of visibleItems) {
             const height = (item as HTMLElement).offsetHeight;
             if (height > 0) {
-                currentMeasuredHeight += height;
+                totalHeight += height;
                 count++;
             }
-        });
+        }
         
         if (count === 0) return this.#itemHeight;
-        const currentAverage: number = currentMeasuredHeight / count;
-        
-        const previousWeight: number = this.#itemHeight > 0 ? 0.7 : 0;
-        const newWeight: number = 1 - previousWeight;
-        this.#itemHeight = (this.#itemHeight * previousWeight) + (currentAverage * newWeight);
+        this.#itemHeight = totalHeight / count;
         
         return this.#itemHeight;
     }
@@ -297,18 +272,6 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         const div = this.itemsContainer;
         div.innerHTML = '';
         
-        // Create spacer element if it doesn't exist
-        if (!this.#spacerElement) {
-            this.#spacerElement = document.createElement('div');
-            this.#spacerElement.className = 'virtual-spacer';
-            this.#spacerElement.style.width = '1px';
-            this.#spacerElement.style.visibility = 'hidden';
-            this.#spacerElement.style.position = 'absolute';
-            this.#spacerElement.style.left = '0';
-            this.#spacerElement.style.pointerEvents = 'none';
-            div.appendChild(this.#spacerElement);
-        }
-        
         this.#displayedItems = items;
         
         if (items !== undefined) {
@@ -327,22 +290,8 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
     #renderVisibleItems(items: any[]) {
         const scrollContainer: HTMLElement = this.itemsContainer;
         
-        if (!scrollContainer.style.height) {
-            scrollContainer.style.height = '600px';
-        }
-        scrollContainer.style.overflow = 'auto';
-        scrollContainer.style.position = 'relative';
-        
-        // Remove flex layout which can interfere with natural element flow
-        scrollContainer.style.display = 'block';
-        
         this.#estimatedTotalHeight = items.length * this.#itemHeight;
         
-        // We don't need the spacer element anymore as we'll use padding
-        if (this.#spacerElement) {
-            this.#spacerElement.remove();
-            this.#spacerElement = null;
-        }
         
         console.log('Total items:', items.length);
         console.log('Item height:', this.#itemHeight);
@@ -395,7 +344,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
             const slotName = `i-${i}`;
             
             if (!currentSlots.has(i)) {
-                const ctl: BindableControl = this.createItemContainer();
+                const ctl = this.createItemContainer();
                 const template = this.#getItemTemplateContent(item);
                 ctl.append(template.cloneNode(true));
                 ctl.model = item;
