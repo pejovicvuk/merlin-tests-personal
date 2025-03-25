@@ -26,6 +26,9 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
     #startIndex: number = 0;
     #endIndex: number = 0;
     #visibleItems: number = 0;
+    #slotToIndexMap = new Map<string, number>(); // Maps slot names to array indices
+    #indexToSlotMap = new Map<number, string>(); // Maps array indices to slot names
+    #totalRenderedItems = 100; // Number of items to keep rendered
 
     constructor() {
         super();
@@ -163,6 +166,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
     #onScroll = (event: Event) => {
         const scrollContainer = event.target as HTMLElement;
         this.#scrollTop = scrollContainer.scrollTop;
+        
         const newStartIndex = Math.floor(this.#scrollTop / this.#itemHeight);
         
         if (Math.abs(newStartIndex - this.#startIndex) >= 1) {
@@ -190,42 +194,46 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
             if (itemsIterable) {
                 items = Array.isArray(itemsIterable) ? itemsIterable : Array.from(itemsIterable);
             }
-        } catch {
-        }
+        } catch {}
         
-        if (items.length > 0 && this.#itemHeight === 0) {
+        if (items.length > 0) {
             const div = this.itemsContainer;
             div.innerHTML = '';
             
-            const sampleSize: number = Math.min(100, items.length);
+            const initialRenderCount = Math.min(this.#totalRenderedItems, items.length);
             
-            for (let i = 0; i < sampleSize; i++) {
+            for (let i = 0; i < initialRenderCount; i++) {
                 const item = items[i];
-
+                const slotName = `i-${i}`;
+                
                 const ctl = this.createItemContainer();
                 const template = this.#getItemTemplateContent(item);
                 ctl.append(template.cloneNode(true));
                 ctl.model = item;
-
-                const slotName: string = 'i-' + this.#slotCount++;
-
                 ctl.slot = slotName;
                 this.appendChild(ctl);
 
                 const slot = document.createElement('slot');
                 slot.name = slotName;
                 div.appendChild(slot);
+                
+                this.#indexToSlotMap.set(i, slotName);
+                this.#slotToIndexMap.set(slotName, i);
             }
-            this.#estimateItemHeight();
-
-            div.innerHTML = '';
-            this.querySelectorAll('[slot^="i-"]').forEach(el => el.remove());
+            
+            if (this.#itemHeight === 0) {
+                this.#estimateItemHeight();
+            }
         }
         
         this.#windowHeight = this.itemsContainer.clientHeight;
-        this.#startIndex = Math.floor(this.#scrollTop / this.#itemHeight);
+        this.#startIndex = 0;
         this.#visibleItems = Math.ceil(this.#windowHeight / this.#itemHeight);
         this.#endIndex = this.#startIndex + this.#visibleItems;
+        
+        if (items.length > 0) {
+            this.#renderVisibleItems(items);
+        }
     }
 
     #estimateItemHeight() {
@@ -289,91 +297,99 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
 
     #renderVisibleItems(items: any[]) {
         const scrollContainer: HTMLElement = this.itemsContainer;
-        
         this.#estimatedTotalHeight = items.length * this.#itemHeight;
         
+        const fragment = document.createDocumentFragment();
         
-        console.log('Total items:', items.length);
-        console.log('Item height:', this.#itemHeight);
-        console.log('Total virtual height:', this.#estimatedTotalHeight);
-        console.log('Scroll container height:', scrollContainer.offsetHeight);
+        const heightSpacer = document.createElement('div');
+        heightSpacer.style.height = `${this.#estimatedTotalHeight}px`;
+        heightSpacer.style.position = 'absolute';
+        heightSpacer.style.width = '1px';
+        heightSpacer.style.pointerEvents = 'none';
+        
+        const container = document.createElement('div');
+        container.style.paddingTop = `${this.#startIndex * this.#itemHeight}px`;
+        container.style.paddingBottom = `${(items.length - this.#endIndex) * this.#itemHeight}px`;
+        container.style.display = 'flex';
+        container.style.flexDirection = 'column';
+        
+        fragment.appendChild(heightSpacer);
+        fragment.appendChild(container);
         
         const overscan: number = 5;
         const startWithOverscan: number = Math.max(0, this.#startIndex - overscan);
         const endWithOverscan: number = Math.min(items.length, this.#endIndex + overscan);
         
-        const shouldBeVisible: Set<number> = new Set<number>();//skloni ovo, oslanja se da se itemi ne menjaju
+        const visibleIndices = new Set<number>();
         for (let i = startWithOverscan; i < endWithOverscan; i++) {
-            shouldBeVisible.add(i);
+            visibleIndices.add(i);
+        }
+        const slotsToUpdate = new Map<string, number>(); // slot name -> new index
+        
+        for (const [index, slotName] of this.#indexToSlotMap.entries()) {
+            if (visibleIndices.has(index)) {
+                slotsToUpdate.set(slotName, index);
+                visibleIndices.delete(index);
+            }
         }
         
-        const currentSlots: Map<number, HTMLElement> = new Map<number, HTMLElement>();
-        this.querySelectorAll('[slot^="i-"]').forEach(el => {
-            const index = parseInt(el.getAttribute('slot')!.substring(2));
-            currentSlots.set(index, el as HTMLElement);
-        });
+        const indicesNeedingSlots = Array.from(visibleIndices);
+        const slotsToRecycle = new Set<string>();
         
-        currentSlots.forEach((el, index) => {
-            if (!shouldBeVisible.has(index)) {
-                el.remove();
-                const slot = scrollContainer.querySelector(`slot[name="i-${index}"]`);
-                if (slot) slot.remove();
+        for (const [index, slotName] of this.#indexToSlotMap.entries()) {
+            if (!visibleIndices.has(index) && !slotsToUpdate.has(slotName)) {
+                slotsToRecycle.add(slotName);
             }
-        });
+        }
         
-        // Create an array of indices to render in the correct order
-        const indicesToRender = Array.from(shouldBeVisible).sort((a, b) => a - b);
-        
-        // Create a container for the visible range with padding above and below
-        const fragment = document.createDocumentFragment();
-        let container = document.createElement('div');
-        
-        // Add padding at the top to represent items above the visible area
-        const paddingTop = startWithOverscan * this.#itemHeight;
-        container.style.paddingTop = `${paddingTop}px`;
-        
-        // Add padding at the bottom to represent items below the visible area
-        const itemsBelow = items.length - endWithOverscan;
-        const paddingBottom = itemsBelow * this.#itemHeight;
-        container.style.paddingBottom = `${paddingBottom}px`;
-        
-        fragment.appendChild(container);
-        
-        for (const i of indicesToRender) {
-            const item = items[i];
-            const slotName = `i-${i}`;
+        const recycledSlots = Array.from(slotsToRecycle);
+        for (let i = 0; i < Math.min(indicesNeedingSlots.length, recycledSlots.length); i++) {
+            const index = indicesNeedingSlots[i];
+            const slotName = recycledSlots[i];
             
-            if (!currentSlots.has(i)) {
-                const ctl = this.createItemContainer();
-                const template = this.#getItemTemplateContent(item);
-                ctl.append(template.cloneNode(true));
-                ctl.model = item;
+            const oldIndex = this.#slotToIndexMap.get(slotName);
+            if (oldIndex !== undefined) {
+                this.#indexToSlotMap.delete(oldIndex);
+            }
+            
+            this.#indexToSlotMap.set(index, slotName);
+            this.#slotToIndexMap.set(slotName, index);
+            
+            slotsToUpdate.set(slotName, index);
+        }
+        for (let i = recycledSlots.length; i < indicesNeedingSlots.length; i++) {
+            const index = indicesNeedingSlots[i];
+            const slotName = `i-${this.#slotCount++}`;
+            
+            this.#indexToSlotMap.set(index, slotName);
+            this.#slotToIndexMap.set(slotName, index);
+            
+            slotsToUpdate.set(slotName, index);
+        }
+        
+        for (const [slotName, index] of slotsToUpdate.entries()) {
+            const item = items[index];
+            
+            let ctl = this.querySelector(`[slot="${slotName}"]`) as BindableControl;
+            
+            if (!ctl) {
+                ctl = this.createItemContainer();
                 ctl.slot = slotName;
                 this.appendChild(ctl);
-                
-                const slot = document.createElement('slot');
-                slot.name = slotName;
-                slot.style.display = 'block';
-                container.appendChild(slot);
-            } else {
-                const ctl = currentSlots.get(i) as BindableControl;
-                if (ctl.model !== item) {
-                    ctl.model = item;
-                }
-                
-                const slot = scrollContainer.querySelector(`slot[name="${slotName}"]`);
-                if (slot) {
-                    container.appendChild(slot);
-                }
             }
+            
+            const template = this.#getItemTemplateContent(item);
+            ctl.innerHTML = '';
+            ctl.append(template.cloneNode(true));
+            ctl.model = item;
+            
+            const slot = document.createElement('slot');
+            slot.name = slotName;
+            container.appendChild(slot);
         }
         
-        // Clear the container and add our fragment
         scrollContainer.innerHTML = '';
         scrollContainer.appendChild(fragment);
-        
-        console.log('Rendered items:', shouldBeVisible.size);
-        console.log('Padding top:', paddingTop, 'Padding bottom:', paddingBottom);
     }
 
     onItemsChangedOriginal() {
