@@ -20,10 +20,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
     #virtualized: boolean = false; 
     #itemToElementMap = new Map<any, BindableControl>();
     #estimatedTotalHeight: number = 0;
-    #sentinelTop?: HTMLElement;
-    #sentinelBottom?: HTMLElement;
-    #topSentinelIndex: number = 0;
-    #bottomSentinelIndex: number = 0;
+    #bottomItemIndex: number = 0;
 
     constructor() {
         super();
@@ -222,40 +219,55 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                 }
             }
 
-            const initialRenderCount: number = 300;
+            const initialRenderCount: number = 100;
             
-            for (const item of items) {
-                if (this.#slotCount >= initialRenderCount) break;
+            const renderBatch = (startIndex: number, count: number) => {
+                if (!items || startIndex >= items.length) {
+                    console.log("No more items to render");
+                    return null;
+                }
                 
-                const ctl = this.createItemContainer();
-                const template = this.#getItemTemplateContent(item);
-                ctl.append(template.cloneNode(true));
-                ctl.model = item;
-
-                const slotName = 'i-' + this.#slotCount++;
-                ctl.slot = slotName;
-                this.appendChild(ctl);
-
-                const slot = document.createElement('slot');
-                slot.name = slotName;
-                div.appendChild(slot);
+                const endIndex = Math.min(items.length, startIndex + count);
+                console.log(`Rendering items from index ${startIndex} to ${endIndex - 1}`);
                 
-                this.#itemToElementMap.set(item, ctl);
-            }
+                let lastRenderedElement = null;
+                
+                for (let i = startIndex; i < endIndex; i++) {
+                    const item = items[i];
+                    
+                    const ctl = this.createItemContainer();
+                    const template = this.#getItemTemplateContent(item);
+                    ctl.append(template.cloneNode(true));
+                    ctl.model = item;
+                    
+                    const slotName = 'i-' + this.#slotCount++;
+                    ctl.slot = slotName;
+                    this.appendChild(ctl);
+                    
+                    const slot = document.createElement('slot');
+                    slot.name = slotName;
+                    div.appendChild(slot);
+                    
+                    this.#itemToElementMap.set(item, ctl);
+                    this.#bottomItemIndex = i;
+                    lastRenderedElement = ctl;
+                }
+                
+                return lastRenderedElement;
+            };
+            
+            let lastElement = renderBatch(0, initialRenderCount);
             
             // calculating the total height of the items after they are rendered
             requestAnimationFrame(() => {
                 let totalHeight: number = 0;
                 
-                this.#itemToElementMap.forEach((ctl) => {
-                    const styles = window.getComputedStyle(ctl);
-                    const marginTop = parseFloat(styles.marginTop);
-                    const marginBottom = parseFloat(styles.marginBottom);
-                    const rect = ctl.getBoundingClientRect();      
+                this.#itemToElementMap.forEach((ctl) => { 
+                    const rect = ctl.getBoundingClientRect();
                     
                     if (rect.height > 0) {
-                        totalHeight += rect.height + marginTop + marginBottom;
-                    }
+                        totalHeight += rect.height;
+                    }    
                 });
                 
                 const averageItemHeight = totalHeight / initialRenderCount;
@@ -263,7 +275,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                 
                 div.style.position = 'relative';
                 div.style.overflow = 'auto';
-                div.style.height = '600px'; // hardcoded for testing purposes 
+                div.style.height = '600px';
                 
                 let scrollHeightContainer = div.querySelector('.virtual-height-container') as HTMLElement;
                 if (!scrollHeightContainer) {
@@ -277,35 +289,8 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                     div.appendChild(scrollHeightContainer);
                 }
                 
-                scrollHeightContainer.style.height = `${this.#estimatedTotalHeight}px`;
-                
-                console.log(`Average item height (with margins): ${averageItemHeight}px`);
-                console.log(`Estimated total height for ${items.length} items: ${this.#estimatedTotalHeight}px`);
+                scrollHeightContainer.style.top = `${this.#estimatedTotalHeight}px`;
             });
-
-            this.#sentinelBottom = document.createElement('div');
-            this.#sentinelBottom.style.height = '1px';
-            this.#sentinelBottom.style.visibility = 'hidden';
-            this.#sentinelBottom.style.margin = '0';
-            this.#sentinelBottom.style.padding = '0';
-
-            this.#sentinelTop = document.createElement('div');
-            this.#sentinelTop.style.height = '1px';
-            this.#sentinelTop.style.visibility = 'hidden';
-            this.#sentinelTop.style.margin = '0';
-            this.#sentinelTop.style.padding = '0';
-
-            if (div.firstChild) {
-                div.insertBefore(this.#sentinelTop, div.firstChild);
-            } else {
-                div.appendChild(this.#sentinelTop);
-            }
-            div.appendChild(this.#sentinelBottom);
-
-            this.#topSentinelIndex = 0;
-            this.#bottomSentinelIndex = initialRenderCount;
-            console.log(`Top sentinel index: ${this.#topSentinelIndex}`);
-            console.log(`Bottom sentinel index: ${this.#bottomSentinelIndex}`);
 
             const observerOptions = {
                 root: div,
@@ -313,74 +298,24 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                 threshold: 0.0
             };
 
-            const topObserver = new IntersectionObserver((entries) => {
-                if (entries[0].isIntersecting) {
-                    console.log("Top sentinel is visible");
-                    // Will handle rendering items above here
-                }
-                else {
-                    console.log("Top sentinel is not visible");
-                }
-            }, observerOptions);
-
-            const bottomObserver = new IntersectionObserver((entries) => {
-                if (entries[0].isIntersecting) {
-                    console.log("Bottom sentinel is visible");
-                    
-                    // Get the items array
-                    const items = this.items as any[];
-                    if (!items || this.#bottomSentinelIndex >= items.length) {
-                        console.log("No more items to render below");
-                        return;
-                    }
-                    
-                    // Determine how many items to render in this batch
-                    const batchSize = 100;
-                    const endIndex = Math.min(items.length, this.#bottomSentinelIndex + batchSize);
-                    
-                    console.log(`Rendering items from index ${this.#bottomSentinelIndex} to ${endIndex - 1}`);
-                    
-                    // Render the next batch of items
-                    for (let i = this.#bottomSentinelIndex; i < endIndex; i++) {
-                        const item = items[i];
+            if (lastElement) {
+                const bottomObserver = new IntersectionObserver((entries) => {
+                    if (entries[0].isIntersecting) {
+                        console.log("Last element is visible, loading more items");
+                        bottomObserver.disconnect(); // da li mi treba ovo
                         
-                        // Create the item container
-                        const ctl = this.createItemContainer();
-                        const template = this.#getItemTemplateContent(item);
-                        ctl.append(template.cloneNode(true));
-                        ctl.model = item;
-                        
-                        // Set up the slot
-                        const slotName = 'i-' + this.#slotCount++;
-                        ctl.slot = slotName;
-                        this.appendChild(ctl);
-                        
-                        // Create and add the slot to the container
-                        const slot = document.createElement('slot');
-                        slot.name = slotName;
-                        
-                        // Insert before the bottom sentinel
-                        if (this.#sentinelBottom) {
-                            div.insertBefore(slot, this.#sentinelBottom);
-                        } else {
-                            div.appendChild(slot);
+                        lastElement = renderBatch(this.#bottomItemIndex + 1, initialRenderCount);
+                        if (lastElement) {
+                            bottomObserver.observe(lastElement);
+                            console.log("Now observing new last element for loading more");
                         }
-                        
-                        // Update the mapping
-                        this.#itemToElementMap.set(item, ctl);
+                    } else {
+                        console.log("Last element is no longer visible, cleaning up");
                     }
-                    
-                    // Update the bottom sentinel index
-                    this.#bottomSentinelIndex = endIndex;
-                    console.log(`Updated bottom sentinel index to ${this.#bottomSentinelIndex}`);
-                }
-                else {
-                    console.log("Bottom sentinel is not visible");
-                }
-            }, observerOptions);
+                }, observerOptions);
+                bottomObserver.observe(lastElement);
+            }
 
-            topObserver.observe(this.#sentinelTop);
-            bottomObserver.observe(this.#sentinelBottom);
         }
     }
 
