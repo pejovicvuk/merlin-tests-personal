@@ -20,7 +20,10 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
     #virtualized: boolean = false; 
     #itemToElementMap = new Map<any, BindableControl>();
     #estimatedTotalHeight: number = 0;
-    #bottomItemIndex: number = 0;
+    #bottomSentinelIndex: number = 0;
+    #bottomSentinel?: HTMLElement;
+    #observerBottomLoad: IntersectionObserver | undefined;
+    #observerBottomDelete: IntersectionObserver | undefined;
 
     constructor() {
         super();
@@ -208,7 +211,13 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         this.#itemToElementMap.clear();
         
         const div = this.itemsContainer;
-
+        div.innerHTML = ''; // Clear container
+        
+        // Setup container for virtualization
+        div.style.position = 'relative';
+        div.style.overflow = 'auto';
+        div.style.height = '600px'; // hardcoded za sad
+        
         this.#displayedItems = items;
 
         if (items !== undefined) {
@@ -219,104 +228,209 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                 }
             }
 
-            const initialRenderCount: number = 100;
+            const initialRenderCount = 20; // Start with fewer items for faster initial render
             
-            const renderBatch = (startIndex: number, count: number) => {
-                if (!items || startIndex >= items.length) {
-                    console.log("No more items to render");
-                    return null;
-                }
-                
-                const endIndex = Math.min(items.length, startIndex + count);
-                console.log(`Rendering items from index ${startIndex} to ${endIndex - 1}`);
-                
-                let lastRenderedElement = null;
-                
-                for (let i = startIndex; i < endIndex; i++) {
-                    const item = items[i];
-                    
-                    const ctl = this.createItemContainer();
-                    const template = this.#getItemTemplateContent(item);
-                    ctl.append(template.cloneNode(true));
-                    ctl.model = item;
-                    
-                    const slotName = 'i-' + this.#slotCount++;
-                    ctl.slot = slotName;
-                    this.appendChild(ctl);
-                    
-                    const slot = document.createElement('slot');
-                    slot.name = slotName;
-                    div.appendChild(slot);
-                    
-                    this.#itemToElementMap.set(item, ctl);
-                    this.#bottomItemIndex = i;
-                    lastRenderedElement = ctl;
-                }
-                
-                return lastRenderedElement;
-            };
+            // Create a spacer element to maintain scroll height
+            const spacer = document.createElement('div');
+            spacer.style.position = 'absolute';
+            spacer.style.width = '1px';
+            spacer.style.left = '0';
+            spacer.style.top = '0';
+            spacer.style.height = '1px';
+            spacer.style.visibility = 'hidden';
+            div.appendChild(spacer);
             
-            let lastElement = renderBatch(0, initialRenderCount);
+            // Directly render initial items
+            const endIndex = Math.min(items.length, initialRenderCount);
             
-            // calculating the total height of the items after they are rendered
+            for (let i = 0; i < endIndex; i++) {
+                const item = items[i];
+                
+                const ctl = this.createItemContainer();
+                const template = this.#getItemTemplateContent(item);
+                ctl.append(template.cloneNode(true));
+                ctl.model = item;
+                
+                const slotName = 'i-' + this.#slotCount++;
+                ctl.slot = slotName;
+                this.appendChild(ctl);
+                
+                const slot = document.createElement('slot');
+                slot.name = slotName;
+                div.appendChild(slot);
+                
+                this.#itemToElementMap.set(item, ctl);
+            }
+            this.#bottomSentinelIndex = initialRenderCount;
+
             requestAnimationFrame(() => {
-                let totalHeight: number = 0;
+                let totalHeight = 0;
                 
                 this.#itemToElementMap.forEach((ctl) => { 
                     const rect = ctl.getBoundingClientRect();
-                    
                     if (rect.height > 0) {
                         totalHeight += rect.height;
                     }    
                 });
                 
-                const averageItemHeight = totalHeight / initialRenderCount;
+                const averageItemHeight = totalHeight / initialRenderCount
                 this.#estimatedTotalHeight = averageItemHeight * items.length;
+                spacer.style.top = `${this.#estimatedTotalHeight}px`;
                 
-                div.style.position = 'relative';
-                div.style.overflow = 'auto';
-                div.style.height = '600px';
-                
-                let scrollHeightContainer = div.querySelector('.virtual-height-container') as HTMLElement;
-                if (!scrollHeightContainer) {
-                    scrollHeightContainer = document.createElement('div');
-                    scrollHeightContainer.style.height = '1px';
-                    scrollHeightContainer.style.visibility = 'hidden';
-                    scrollHeightContainer.style.position = 'absolute';
-                    scrollHeightContainer.style.left = '0';
-                    scrollHeightContainer.style.top = '0';
-                    scrollHeightContainer.style.width = '1px';
-                    div.appendChild(scrollHeightContainer);
-                }
-                
-                scrollHeightContainer.style.top = `${this.#estimatedTotalHeight}px`;
             });
+            this.#bottomSentinel = document.createElement('div');
+            this.#bottomSentinel.style.height = '1px';
+            this.#bottomSentinel.style.width = '100%';
+            this.#bottomSentinel.style.position = 'relative';
+            this.#bottomSentinel.style.visibility = 'hidden'; 
 
-            const observerOptions = {
-                root: div,
-                rootMargin: '500px 0px 500px 0px',
-                threshold: 0.0
-            };
+            const sentinelTop = document.createElement('div');
+            sentinelTop.style.height = '1px';
+            sentinelTop.style.background = 'red';
+            sentinelTop.style.width = '100%';
+            sentinelTop.style.position = 'relative';
+            sentinelTop.style.visibility = 'hidden'; 
 
-            if (lastElement) {
-                const bottomObserver = new IntersectionObserver((entries) => {
-                    if (entries[0].isIntersecting) {
-                        console.log("Last element is visible, loading more items");
-                        bottomObserver.disconnect(); // da li mi treba ovo
-                        
-                        lastElement = renderBatch(this.#bottomItemIndex + 1, initialRenderCount);
-                        if (lastElement) {
-                            bottomObserver.observe(lastElement);
-                            console.log("Now observing new last element for loading more");
-                        }
-                    } else {
-                        console.log("Last element is no longer visible, cleaning up");
-                    }
-                }, observerOptions);
-                bottomObserver.observe(lastElement);
+            if (div.firstChild) {
+                div.insertBefore(sentinelTop, div.firstChild);
+            } else {
+                div.appendChild(sentinelTop);
             }
+            div.appendChild(this.#bottomSentinel);
+
+            this.#observerBottomLoad = new IntersectionObserver((entries) => {
+                for (const entry of entries) {
+                    if (entry.isIntersecting) {
+                        this.#renderItemAtIndex(this.#bottomSentinelIndex);
+                    }
+                }
+            },
+            {
+                rootMargin: '200px',
+                threshold: 0.0
+            }
+        );
+            this.#observerBottomDelete = new IntersectionObserver((entries) => {
+                for (const entry of entries) {
+                    if (!entry.isIntersecting) {
+                        console.log("bottom sentinel index", this.#bottomSentinelIndex)
+                        this.#deleteItemAtIndex(this.#bottomSentinelIndex - 1);
+                    }
+                }
+            },
+            {
+                rootMargin: '500px',
+                threshold: 0.0
+            }
+        );
+            this.#observerBottomLoad.observe(this.#bottomSentinel);
+            this.#observerBottomDelete.observe(this.#bottomSentinel);
 
         }
+    }
+    #renderItemAtIndex(index: number) {
+        const items = this.#displayedItems as any[] | undefined;
+        if (!items || index >= items.length) {
+            return;
+        }
+        
+        const item = items[index];
+        
+        if (this.#itemToElementMap.has(item)) {
+            return this.#itemToElementMap.get(item);
+        }
+        
+        const div = this.itemsContainer;
+        const ctl = this.createItemContainer();
+        const template = this.#getItemTemplateContent(item);
+        ctl.append(template.cloneNode(true));
+        ctl.model = item;
+        
+        const slotName = 'i-' + this.#slotCount++;
+        ctl.slot = slotName;
+        this.appendChild(ctl);
+        
+        const slot = document.createElement('slot');
+        slot.name = slotName;
+        
+        if (this.#bottomSentinel) {
+            this.#bottomSentinel.before(slot);
+            
+            if (this.#observerBottomLoad) {
+                this.#observerBottomLoad.unobserve(this.#bottomSentinel);
+                this.#observerBottomLoad.observe(this.#bottomSentinel);
+            }
+        } else {
+            div.appendChild(slot);
+        }   
+        this.#itemToElementMap.set(item, ctl);
+        
+        this.#bottomSentinelIndex++;
+        
+        return ctl;
+    }
+    #deleteItemAtIndex(index: number) {
+        console.log("Attempting to delete item at index", index);
+        
+        const items = this.#displayedItems as any[] | undefined;
+        if (!items) {
+            console.log("No items array");
+            return;
+        }
+        
+        if (index < 0 || index >= items.length) {
+            console.log("Index out of bounds:", index, "length:", items.length);
+            return;
+        }
+        
+        const item = items[index];
+        console.log("Item to delete:", item);
+        
+        if (!this.#itemToElementMap.has(item)) {
+            console.log("Item not in map");
+            return;
+        }
+        
+        const div = this.itemsContainer;
+        const ctl = this.#itemToElementMap.get(item);
+        
+        if (!ctl) {
+            return;
+        }
+        
+        const slotName = ctl.slot;
+        const slot = div.querySelector(`slot[name="${slotName}"]`);
+        
+        if (slot) {
+            slot.remove();
+        }
+        
+        ctl.remove();
+        
+        this.#itemToElementMap.delete(item);
+        
+        this.#bottomSentinelIndex--;
+        
+        if (this.#bottomSentinel) {
+            const slots = div.querySelectorAll('slot[name^="i-"]');
+            if (slots.length > 0) {
+                const lastSlot = slots[slots.length - 1];
+                lastSlot.after(this.#bottomSentinel);
+            } else {
+                div.appendChild(this.#bottomSentinel);
+            }
+            
+            if (this.#observerBottomLoad) {
+                this.#observerBottomLoad.unobserve(this.#bottomSentinel);
+                this.#observerBottomLoad.observe(this.#bottomSentinel);
+            }
+            if (this.#observerBottomDelete) {
+                this.#observerBottomDelete.unobserve(this.#bottomSentinel);
+                this.#observerBottomDelete.observe(this.#bottomSentinel);
+            }
+        }
+        
+        console.log("Successfully deleted item at index", index);
     }
 
     onItemsChangedOriginal() {
