@@ -228,19 +228,14 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                 }
             }
 
-            const initialRenderCount = 20; // Start with fewer items for faster initial render
+            const initialRenderCount = 20;
             
-            // Create a spacer element to maintain scroll height
-            const spacer = document.createElement('div');
-            spacer.style.position = 'absolute';
-            spacer.style.width = '1px';
-            spacer.style.left = '0';
-            spacer.style.top = '0';
-            spacer.style.height = '1px';
-            spacer.style.visibility = 'hidden';
-            div.appendChild(spacer);
-            
-            // Directly render initial items
+            const virtualContainer = document.createElement('div');
+            virtualContainer.style.position = 'relative';
+            virtualContainer.style.display = 'flex';
+            virtualContainer.style.flexDirection = 'column';
+            div.appendChild(virtualContainer);
+
             const endIndex = Math.min(items.length, initialRenderCount);
             
             for (let i = 0; i < endIndex; i++) {
@@ -257,7 +252,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                 
                 const slot = document.createElement('slot');
                 slot.name = slotName;
-                div.appendChild(slot);
+                virtualContainer.appendChild(slot);
                 
                 this.#itemToElementMap.set(item, ctl);
             }
@@ -273,11 +268,13 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                     }    
                 });
                 
-                const averageItemHeight = totalHeight / initialRenderCount
+                const averageItemHeight = totalHeight / initialRenderCount;
                 this.#estimatedTotalHeight = averageItemHeight * items.length;
-                spacer.style.top = `${this.#estimatedTotalHeight}px`;
-                
+                    
+                virtualContainer.style.paddingTop = '0px';
+                virtualContainer.style.paddingBottom = `${this.#estimatedTotalHeight - totalHeight}px`;
             });
+            
             this.#bottomSentinel = document.createElement('div');
             this.#bottomSentinel.style.height = '1px';
             this.#bottomSentinel.style.width = '100%';
@@ -286,17 +283,16 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
 
             const sentinelTop = document.createElement('div');
             sentinelTop.style.height = '1px';
-            sentinelTop.style.background = 'red';
             sentinelTop.style.width = '100%';
             sentinelTop.style.position = 'relative';
             sentinelTop.style.visibility = 'hidden'; 
 
-            if (div.firstChild) {
-                div.insertBefore(sentinelTop, div.firstChild);
+            if (virtualContainer.firstChild) {
+                virtualContainer.insertBefore(sentinelTop, virtualContainer.firstChild);
             } else {
-                div.appendChild(sentinelTop);
+                virtualContainer.appendChild(sentinelTop);
             }
-            div.appendChild(this.#bottomSentinel);
+            virtualContainer.appendChild(this.#bottomSentinel);
 
             this.#observerBottomLoad = new IntersectionObserver((entries) => {
                 for (const entry of entries) {
@@ -308,12 +304,11 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
             {
                 rootMargin: '200px',
                 threshold: 0.0
-            }
-        );
+            });
+            
             this.#observerBottomDelete = new IntersectionObserver((entries) => {
                 for (const entry of entries) {
                     if (!entry.isIntersecting) {
-                        console.log("bottom sentinel index", this.#bottomSentinelIndex)
                         this.#deleteItemAtIndex(this.#bottomSentinelIndex - 1);
                     }
                 }
@@ -321,11 +316,10 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
             {
                 rootMargin: '500px',
                 threshold: 0.0
-            }
-        );
+            });
+            
             this.#observerBottomLoad.observe(this.#bottomSentinel);
             this.#observerBottomDelete.observe(this.#bottomSentinel);
-
         }
     }
     #renderItemAtIndex(index: number) {
@@ -340,7 +334,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
             return this.#itemToElementMap.get(item);
         }
         
-        const div = this.itemsContainer;
+        const virtualContainer = this.itemsContainer.firstElementChild as HTMLElement;
         const ctl = this.createItemContainer();
         const template = this.#getItemTemplateContent(item);
         ctl.append(template.cloneNode(true));
@@ -361,37 +355,42 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                 this.#observerBottomLoad.observe(this.#bottomSentinel);
             }
         } else {
-            div.appendChild(slot);
+            virtualContainer.appendChild(slot);
         }   
         this.#itemToElementMap.set(item, ctl);
         
         this.#bottomSentinelIndex++;
         
+        // Update padding as we render more items
+        requestAnimationFrame(() => {
+            const renderedHeight = Array.from(this.#itemToElementMap.values())
+                .reduce((total, ctl) => total + ctl.getBoundingClientRect().height, 0);
+            const remainingItems = items.length - this.#bottomSentinelIndex;
+            const averageHeight = renderedHeight / this.#bottomSentinelIndex;
+            const remainingHeight = remainingItems * averageHeight;
+            
+            virtualContainer.style.paddingBottom = `${remainingHeight}px`;
+        });
+        
         return ctl;
     }
     #deleteItemAtIndex(index: number) {
-        console.log("Attempting to delete item at index", index);
-        
         const items = this.#displayedItems as any[] | undefined;
         if (!items) {
-            console.log("No items array");
             return;
         }
         
         if (index < 0 || index >= items.length) {
-            console.log("Index out of bounds:", index, "length:", items.length);
             return;
         }
         
         const item = items[index];
-        console.log("Item to delete:", item);
         
         if (!this.#itemToElementMap.has(item)) {
-            console.log("Item not in map");
             return;
         }
         
-        const div = this.itemsContainer;
+        const virtualContainer = this.itemsContainer.firstElementChild as HTMLElement;
         const ctl = this.#itemToElementMap.get(item);
         
         if (!ctl) {
@@ -399,7 +398,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         }
         
         const slotName = ctl.slot;
-        const slot = div.querySelector(`slot[name="${slotName}"]`);
+        const slot = virtualContainer.querySelector(`slot[name="${slotName}"]`);
         
         if (slot) {
             slot.remove();
@@ -412,12 +411,12 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         this.#bottomSentinelIndex--;
         
         if (this.#bottomSentinel) {
-            const slots = div.querySelectorAll('slot[name^="i-"]');
+            const slots = virtualContainer.querySelectorAll('slot[name^="i-"]');
             if (slots.length > 0) {
                 const lastSlot = slots[slots.length - 1];
                 lastSlot.after(this.#bottomSentinel);
             } else {
-                div.appendChild(this.#bottomSentinel);
+                virtualContainer.appendChild(this.#bottomSentinel);
             }
             
             if (this.#observerBottomLoad) {
@@ -429,8 +428,6 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                 this.#observerBottomDelete.observe(this.#bottomSentinel);
             }
         }
-        
-        console.log("Successfully deleted item at index", index);
     }
 
     onItemsChangedOriginal() {
