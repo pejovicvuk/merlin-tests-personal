@@ -59,7 +59,7 @@ class TextModel {
         }
     }));
     _selectedArrayIndex: number | undefined = 0;
-
+ 
     get selectedArrayIndex() {
         return this._selectedArrayIndex;
     }
