@@ -235,7 +235,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
             div.appendChild(virtualContainer);
 
             this.#lastRenderedIndex = initialRenderCount - 1;
-            //const bufferSize: number = 20;
+
 
             this.#observer = new IntersectionObserver((entries) => {
                 entries.forEach(entry => {
@@ -278,8 +278,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                                 this.#lastRenderedIndex = nextIndex;
                             }
                         }             
-                        if (itemIndex === this.#firstRenderedIndex) { //element se ne observe-uje lepo
-                            console.log("vidi se:", entry.target);
+                        if (itemIndex === this.#firstRenderedIndex) { //ne radi
                             const prevIndex = itemIndex - 1;
                             if (prevIndex >= 0 && !this.#itemToElementMap.has(items[prevIndex])) {
                                 const virtualContainer = this.itemsContainer.firstElementChild as HTMLElement;
@@ -318,7 +317,6 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                             const element = this.#itemToElementMap.get(items[itemIndex]);
                             
                             if (element) {
-                                this.#observer!.unobserve(element);
                                 const slotName = element.slot;
                                 const slot = virtualContainer.querySelector(`slot[name="${slotName}"]`);
 
@@ -333,44 +331,8 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                                 }
                                 this.#itemToElementMap.delete(items[itemIndex]);
                                 element.remove();
-                                
                                 this.#firstRenderedIndex = itemIndex + 1;
                                 console.log(this.#firstRenderedIndex);
-                                
-                                const newFirstElement = this.#itemToElementMap.get(items[this.#firstRenderedIndex]);
-                                if (newFirstElement) {
-                                    this.#observer!.observe(newFirstElement);
-                                }
-                            }
-                        }
-                        
-                        if(itemIndex === this.#lastRenderedIndex){
-                            const virtualContainer = this.itemsContainer.firstElementChild as HTMLElement;
-                            const element = this.#itemToElementMap.get(items[itemIndex]);
-                            
-                            if (element) {
-                                this.#observer!.unobserve(element);
-                                const slotName = element.slot;
-                                const slot = virtualContainer.querySelector(`slot[name="${slotName}"]`);
-
-                                const elementHeight = element.offsetHeight;
-
-                                const currentPadding = parseInt(virtualContainer.style.paddingBottom || '0') || 0;
-                                const newPadding = Math.max(0, currentPadding + elementHeight);
-                                virtualContainer.style.paddingBottom = `${newPadding}px`;
-
-                                if (slot) {
-                                    slot.remove();
-                                }
-                                this.#itemToElementMap.delete(items[itemIndex]);
-                                element.remove();
-                                
-                                this.#lastRenderedIndex = itemIndex - 1;
-                                
-                                const newLastElement = this.#itemToElementMap.get(items[this.#lastRenderedIndex]);
-                                if (newLastElement) {
-                                    this.#observer!.observe(newLastElement);
-                                }
                             }
                         }
                     }
@@ -378,8 +340,8 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
             },
             {
                 root: div,
-                rootMargin: '0px 0px',
-                threshold: 0.0
+                rootMargin: '300px 0px',
+                threshold: 0.1
             });      
             //render and observe initial items
             for (let i = 0; i < initialRenderCount; i++) {
