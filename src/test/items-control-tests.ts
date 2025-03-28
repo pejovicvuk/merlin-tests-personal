@@ -19,7 +19,7 @@ class TextModel {
                     index: i,
                     size: 'small'
                 };
-            case 1:
+            case 1: 
                 // Medium item with longer text
                 return { 
                     text: `Item ${i} with some additional text that will make this item taller`,
