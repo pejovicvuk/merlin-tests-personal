@@ -263,9 +263,11 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                                             const slotName = firstElement.slot;
                                             const slot = virtualContainer.querySelector(`slot[name="${slotName}"]`);
                                             
-                                            const elementHeight = firstElement.offsetHeight;
-                                            const currentPadding = parseInt(virtualContainer.style.paddingTop || '0');
-                                            virtualContainer.style.paddingTop = `${currentPadding + elementHeight}px`;
+                                            const elementHeight = element.offsetHeight;
+
+                                            const currentPadding = parseInt(virtualContainer.style.paddingTop || '0') || 0;
+                                            const newPadding = Math.max(0, currentPadding + elementHeight);
+                                            virtualContainer.style.paddingTop = `${newPadding}px`;
                                             
                                             if (slot) slot.remove();
                                             this.#itemToElementMap.delete(firstItem);
@@ -278,8 +280,16 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                                     
                                     requestAnimationFrame(() => {
                                         const rect = ctl.getBoundingClientRect();
-                                        if (rect.height > 0) {
-                                            const currentPadding = parseInt(virtualContainer.style.paddingBottom);
+                                        if (rect.height > 0) {          
+                                            let currentPadding = 0;
+                                            try {
+                                                currentPadding = parseInt(virtualContainer.style.paddingBottom || '0') || 0;
+                                                if (virtualContainer.style.paddingBottom.includes('e')) {
+                                                    currentPadding = Math.floor(parseFloat(virtualContainer.style.paddingBottom));
+                                                }
+                                            } catch (e) {
+                                                currentPadding = 0;
+                                            }
                                             const newPadding = Math.max(0, currentPadding - rect.height);
                                             virtualContainer.style.paddingBottom = `${newPadding}px`;
                                         }
@@ -308,7 +318,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                                             const slot = virtualContainer.querySelector(`slot[name="${slotName}"]`);
                                             
                                             const elementHeight = lastElement.offsetHeight;
-                                            const currentPadding = parseInt(virtualContainer.style.paddingBottom || '0');
+                                            const currentPadding = parseInt(virtualContainer.style.paddingBottom);
                                             virtualContainer.style.paddingBottom = `${currentPadding + elementHeight}px`;
                                             
                                             if (slot) slot.remove();
@@ -322,8 +332,16 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                                     
                                     requestAnimationFrame(() => {
                                         const rect = ctl.getBoundingClientRect();
-                                        if (rect.height > 0) {
-                                            const currentPadding = parseInt(virtualContainer.style.paddingTop);
+                                        if (rect.height > 0) {          
+                                            let currentPadding = 0;
+                                            try {
+                                                currentPadding = parseInt(virtualContainer.style.paddingTop);
+                                                if (virtualContainer.style.paddingTop.includes('e')) {
+                                                    currentPadding = Math.floor(parseFloat(virtualContainer.style.paddingTop));
+                                                }
+                                            } catch (e) {
+                                                currentPadding = 0;
+                                            }
                                             const newPadding = Math.max(0, currentPadding - rect.height);
                                             virtualContainer.style.paddingTop = `${newPadding}px`;
                                         }
@@ -371,7 +389,6 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                 
                 const averageItemHeight = totalHeight / initialRenderCount;
                 this.#estimatedTotalHeight = averageItemHeight * items.length;
-                    
                 virtualContainer.style.paddingTop = '0px';
                 virtualContainer.style.paddingBottom = `${this.#estimatedTotalHeight - totalHeight}px`;
             });
