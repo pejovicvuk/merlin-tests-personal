@@ -23,6 +23,8 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
     #observer?: IntersectionObserver;
     #lastRenderedIndex: number = 0;
     #firstRenderedIndex: number = 0;
+    #currentPaddingTop: number = 0;
+    #currentPaddingBottom: number = 0;
 
     constructor() {
         super();
@@ -214,7 +216,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         
         div.style.position = 'relative';
         div.style.overflow = 'auto';
-        div.style.height = '600px'; // hardcoded for now
+        div.style.height = this.getAttribute('height') || '100vh';
         
         this.#displayedItems = items;
 
@@ -226,7 +228,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                 }
             }
 
-            const initialRenderCount = 50;
+            const initialRenderCount: number = 100;
             
             const virtualContainer = document.createElement('div');
             virtualContainer.style.position = 'relative';
@@ -235,17 +237,16 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
             div.appendChild(virtualContainer);
 
             this.#lastRenderedIndex = Math.min(items.length - 1, initialRenderCount - 1);
-            this.#firstRenderedIndex = 0;
 
             this.#observer = new IntersectionObserver((entries) => {
-                entries.forEach(entry => {
+                for (const entry of entries) {
                     const element = entry.target as BindableControl;
                     const item = element.model;
                     const itemIndex = (items as any[]).indexOf(item);
                     
                     if (entry.isIntersecting) {
                         if (itemIndex === this.#lastRenderedIndex && itemIndex < items.length - 1) {
-                            const nextIndex = itemIndex + 1;
+                            const nextIndex: number = itemIndex + 1;
                             if (!this.#itemToElementMap.has(items[nextIndex])) {
                                 const virtualContainer = this.itemsContainer.firstElementChild as HTMLElement;
                                 const nextItem = items[nextIndex];
@@ -260,19 +261,21 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                                         const firstElement = this.#itemToElementMap.get(firstItem);
                                         
                                         if (firstElement) {
-                                            const slotName = firstElement.slot;
-                                            const slot = virtualContainer.querySelector(`slot[name="${slotName}"]`);
-                                            
-                                            const elementHeight = element.offsetHeight;
-
-                                            const currentPadding = parseInt(virtualContainer.style.paddingTop || '0') || 0;
-                                            const newPadding = Math.max(0, currentPadding + elementHeight);
-                                            virtualContainer.style.paddingTop = `${newPadding}px`;
-                                            
-                                            if (slot) slot.remove();
-                                            this.#itemToElementMap.delete(firstItem);
-                                            firstElement.remove();
-                                            this.#firstRenderedIndex++;
+                                            requestAnimationFrame(() => {
+                                                const rect = firstElement.getBoundingClientRect();
+                                                
+                                                const slotName = firstElement.slot;
+                                                const slot = virtualContainer.querySelector(`slot[name="${slotName}"]`);
+                                                
+                                                this.#currentPaddingTop = Math.floor(parseFloat(virtualContainer.style.paddingTop));
+                                                const newPadding = Math.max(0, this.#currentPaddingTop + rect.height);
+                                                virtualContainer.style.paddingTop = `${newPadding}px`;
+                                                
+                                                if (slot) slot.remove();
+                                                this.#itemToElementMap.delete(firstItem);
+                                                firstElement.remove();
+                                                this.#firstRenderedIndex++;
+                                            });
                                         }
                                     }
                                     
@@ -281,16 +284,8 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                                     requestAnimationFrame(() => {
                                         const rect = ctl.getBoundingClientRect();
                                         if (rect.height > 0) {          
-                                            let currentPadding = 0;
-                                            try {
-                                                currentPadding = parseInt(virtualContainer.style.paddingBottom || '0') || 0;
-                                                if (virtualContainer.style.paddingBottom.includes('e')) {
-                                                    currentPadding = Math.floor(parseFloat(virtualContainer.style.paddingBottom));
-                                                }
-                                            } catch (e) {
-                                                currentPadding = 0;
-                                            }
-                                            const newPadding = Math.max(0, currentPadding - rect.height);
+                                            this.#currentPaddingBottom = Math.floor(parseFloat(virtualContainer.style.paddingBottom));
+                                            const newPadding = Math.max(0, this.#currentPaddingBottom - rect.height);
                                             virtualContainer.style.paddingBottom = `${newPadding}px`;
                                         }
                                     });
@@ -314,17 +309,21 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                                         const lastElement = this.#itemToElementMap.get(lastItem);
                                         
                                         if (lastElement) {
-                                            const slotName = lastElement.slot;
-                                            const slot = virtualContainer.querySelector(`slot[name="${slotName}"]`);
-                                            
-                                            const elementHeight = lastElement.offsetHeight;
-                                            const currentPadding = parseInt(virtualContainer.style.paddingBottom);
-                                            virtualContainer.style.paddingBottom = `${currentPadding + elementHeight}px`;
-                                            
-                                            if (slot) slot.remove();
-                                            this.#itemToElementMap.delete(lastItem);
-                                            lastElement.remove();
-                                            this.#lastRenderedIndex--;
+                                            requestAnimationFrame(() => {
+                                                const rect = lastElement.getBoundingClientRect();
+                                                
+                                                const slotName = lastElement.slot;
+                                                const slot = virtualContainer.querySelector(`slot[name="${slotName}"]`);
+                                                
+                                                this.#currentPaddingBottom = Math.floor(parseFloat(virtualContainer.style.paddingBottom));
+                                                const newPadding = Math.max(0, this.#currentPaddingBottom + rect.height);
+                                                virtualContainer.style.paddingBottom = `${newPadding}px`;
+                                                
+                                                if (slot) slot.remove();
+                                                this.#itemToElementMap.delete(lastItem);
+                                                lastElement.remove();
+                                                this.#lastRenderedIndex--;
+                                            });
                                         }
                                     }
                                     
@@ -332,17 +331,9 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                                     
                                     requestAnimationFrame(() => {
                                         const rect = ctl.getBoundingClientRect();
-                                        if (rect.height > 0) {          
-                                            let currentPadding = 0;
-                                            try {
-                                                currentPadding = parseInt(virtualContainer.style.paddingTop);
-                                                if (virtualContainer.style.paddingTop.includes('e')) {
-                                                    currentPadding = Math.floor(parseFloat(virtualContainer.style.paddingTop));
-                                                }
-                                            } catch (e) {
-                                                currentPadding = 0;
-                                            }
-                                            const newPadding = Math.max(0, currentPadding - rect.height);
+                                        if (rect.height > 0) {              
+                                            this.#currentPaddingTop = Math.floor(parseFloat(virtualContainer.style.paddingTop));
+                                            const newPadding = Math.max(0, this.#currentPaddingTop - rect.height);
                                             virtualContainer.style.paddingTop = `${newPadding}px`;
                                         }
                                     });
@@ -350,11 +341,11 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                             }
                         }
                     }
-                });
+                }
             }, {
                 root: div,
-                rootMargin: '300px 0px',
-                threshold: 0.1
+                rootMargin: '300px',
+                threshold: 0.0
             });
             
             for (let i = 0; i < initialRenderCount && i < items.length; i++) {
