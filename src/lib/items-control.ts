@@ -25,6 +25,8 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
     #firstRenderedIndex: number = 0;
     #currentPaddingTop: number = 0;
     #currentPaddingBottom: number = 0;
+    #averageItemHeight: number = 0;
+    #initialRenderCount: number = 100;
 
     constructor() {
         super();
@@ -227,8 +229,6 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                     tracker[addArrayListener](this.#onArrayChanged);
                 }
             }
-
-            const initialRenderCount: number = 100;
             
             const virtualContainer = document.createElement('div');
             virtualContainer.style.position = 'relative';
@@ -236,9 +236,14 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
             virtualContainer.style.flexDirection = 'column';
             div.appendChild(virtualContainer);
 
-            this.#lastRenderedIndex = Math.min(items.length - 1, initialRenderCount - 1);
+            this.#lastRenderedIndex = Math.min(items.length - 1, this.#initialRenderCount - 1);
 
             this.#observer = new IntersectionObserver((entries) => {
+
+                if (this.#isViewportEmpty()) {
+                    this.#handleEmptyViewport();
+                }
+                
                 for (const entry of entries) {
                     const element = entry.target as BindableControl;
                     const item = element.model;
@@ -256,7 +261,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                                 if (ctl) {
                                     this.#itemToElementMap.set(nextItem, ctl);
 
-                                    if (this.#itemToElementMap.size > initialRenderCount) {
+                                    if (this.#itemToElementMap.size > this.#initialRenderCount) {
                                         const firstItem = items[this.#firstRenderedIndex];
                                         const firstElement = this.#itemToElementMap.get(firstItem);
                                         
@@ -304,7 +309,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                                 if (ctl) {
                                     this.#itemToElementMap.set(prevItem, ctl);
                                     
-                                    if (this.#itemToElementMap.size > initialRenderCount) {
+                                    if (this.#itemToElementMap.size > this.#initialRenderCount) {
                                         const lastItem = items[this.#lastRenderedIndex];
                                         const lastElement = this.#itemToElementMap.get(lastItem);
                                         
@@ -341,14 +346,17 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                             }
                         }
                     }
+                    else{
+                        
+                    }
                 }
             }, {
                 root: div,
-                rootMargin: '300px',
+                rootMargin: '600px',
                 threshold: 0.0
             });
             
-            for (let i = 0; i < initialRenderCount && i < items.length; i++) {
+            for (let i = 0; i < this.#initialRenderCount && i < items.length; i++) {
                 const item = items[i];
                 
                 const ctl = this.createItemContainer();
@@ -369,7 +377,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
             }
             
             requestAnimationFrame(() => {
-                let totalHeight = 0;
+                let totalHeight: number = 0;
                 
                 this.#itemToElementMap.forEach((ctl) => { 
                     const rect = ctl.getBoundingClientRect();
@@ -378,8 +386,8 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                     }    
                 });
                 
-                const averageItemHeight = totalHeight / initialRenderCount;
-                this.#estimatedTotalHeight = averageItemHeight * items.length;
+                this.#averageItemHeight = totalHeight / this.#initialRenderCount;
+                this.#estimatedTotalHeight = this.#averageItemHeight * items.length;
                 virtualContainer.style.paddingTop = '0px';
                 virtualContainer.style.paddingBottom = `${this.#estimatedTotalHeight - totalHeight}px`;
             });
@@ -417,7 +425,72 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         
         return ctl;
     }
-
+    #handleEmptyViewport(): void {
+        const items = this.#displayedItems as any[];
+        if (!items || !Array.isArray(items)) return;
+        
+        const container = this.itemsContainer;
+        const virtualContainer = container.firstElementChild as HTMLElement;
+        
+        for (const [_, element] of this.#itemToElementMap.entries()) {
+            const slotName = element.slot;
+            const slot = virtualContainer.querySelector(`slot[name="${slotName}"]`);
+            if (slot) slot.remove();
+            element.remove();
+        }
+        this.#itemToElementMap.clear();
+        
+        const scrollTop = container.scrollTop;
+        
+        const estimatedIndex = Math.floor(scrollTop / this.#averageItemHeight);
+        const safeIndex = Math.max(0, Math.min(estimatedIndex, items.length - 1));
+        
+        const halfCount = Math.floor(this.#initialRenderCount / 2);
+        
+        const startIndex = Math.max(0, safeIndex - halfCount);
+        const endIndex = Math.min(items.length - 1, safeIndex + halfCount);
+        
+        const paddingTop = startIndex * this.#averageItemHeight;
+        virtualContainer.style.paddingTop = `${paddingTop}px`;
+        
+        const itemsBelow = items.length - endIndex - 1;
+        const paddingBottom = itemsBelow * this.#averageItemHeight;
+        virtualContainer.style.paddingBottom = `${paddingBottom}px`;
+        
+        for (let i = startIndex; i <= endIndex; i++) {
+            const item = items[i];
+            const ctl = this.#renderItemAtIndex(i);
+            
+            if (ctl) {
+                this.#itemToElementMap.set(item, ctl);
+                this.#observer!.observe(ctl);
+            }
+        }
+        
+        this.#firstRenderedIndex = startIndex;
+        this.#lastRenderedIndex = endIndex;
+    }
+    #isViewportEmpty(): boolean {
+        const allElements = document.querySelectorAll('[slot^="i-"]');
+  
+        for (let i = 0; i < allElements.length; i++) {
+          const element = allElements[i];
+          const rect = element.getBoundingClientRect();
+          
+          if (
+            rect.bottom > 0 &&
+            rect.right > 0 &&
+            rect.left < (window.innerWidth || document.documentElement.clientWidth) &&
+            rect.top < (window.innerHeight || document.documentElement.clientHeight) &&
+            window.getComputedStyle(element).display !== 'none' &&
+            window.getComputedStyle(element).visibility !== 'hidden' &&
+            window.getComputedStyle(element).opacity !== '0'
+          ) {
+            return false;
+          }
+        }  
+        return true;
+    }
     onItemsChangedOriginal() {
         let items: Iterable<any> | undefined;
         try {
