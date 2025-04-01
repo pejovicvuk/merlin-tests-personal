@@ -23,10 +23,11 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
     #observer?: IntersectionObserver;
     #lastRenderedIndex: number = 0;
     #firstRenderedIndex: number = 0;
-    #currentPaddingTop: number = 0;
-    #currentPaddingBottom: number = 0;
     #averageItemHeight: number = 0;
     #initialRenderCount: number = 100;
+    #itemsPerViewport: number = 0;
+    #currentPaddingTop: number = 0;
+    #currentPaddingBottom: number = 0;
 
     constructor() {
         super();
@@ -183,23 +184,14 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
     }
 
     onItemsChanged() {
-        if (this.virtualized) {
+        if (this.virtualized && Array.isArray(this.items)) {
             this.onItemsChangedVirtualized();
         } else {
             this.onItemsChangedOriginal();
         }
     }
-    #scrollHandler = () => {
-        if (this.#isViewportEmpty()) {
-            this.#handleEmptyViewport();
-        }
-    };
 
     onItemsChangedVirtualized() {
-        if (!Array.isArray(this.items)) {
-            return this.onItemsChangedOriginal();
-        }
-        
         let items: any[] | undefined;
         try {
             items = this.items as any[];
@@ -241,183 +233,166 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
 
             this.#lastRenderedIndex = Math.min(items.length, this.#initialRenderCount) - 1;
 
-            this.#observer = new IntersectionObserver((entries) => {
-                const items = this.items as any[];
-                if (!items || !Array.isArray(items)) return;
-                
-                // Find the last visible item entry
-                const lastVisibleEntry = entries.find(entry => {
-                    if (!entry.isIntersecting) return false;
-                    const element = entry.target as BindableControl;
-                    const item = element.model;
-                    const itemIndex = items.indexOf(item);
-                    return itemIndex === this.#lastRenderedIndex && itemIndex < items.length - 1;
-                });
-                
-                // Find the first visible item entry
-                const firstVisibleEntry = entries.find(entry => {
-                    if (!entry.isIntersecting) return false;
-                    const element = entry.target as BindableControl;
-                    const item = element.model;
-                    const itemIndex = items.indexOf(item);
-                    return itemIndex === this.#firstRenderedIndex && itemIndex > 0;
-                });
-                
-                // Process last visible item (load more items at the end)
-                if (lastVisibleEntry) {
-                    const element = lastVisibleEntry.target as BindableControl;
-                    const item = element.model;
-                    const itemIndex = items.indexOf(item);
-                    
-                    const batchSize = 10;
-                    const remainingItems = items.length - 1 - itemIndex;
-                    const itemsToRender = Math.min(batchSize, remainingItems);
-                    const virtualContainer = this.itemsContainer.firstElementChild as HTMLElement;
-                    
-                    let totalHeight = 0;
-                    let lastRenderedCtl: BindableControl | null = null;
-                    
-                    for (let i = 1; i <= itemsToRender; i++) {
-                        const nextIndex = itemIndex + i;
-                        const nextItem = items[nextIndex];
-                        
-                        if (!this.#itemToElementMap.has(nextItem)) {
-                            const ctl = this.#renderItemAtIndex(nextIndex);
-                            
-                            if (ctl) {
-                                this.#itemToElementMap.set(nextItem, ctl);
-                                lastRenderedCtl = ctl;
-                                
-                                const rect = ctl.getBoundingClientRect();
-                                if (rect.height > 0) {
-                                    totalHeight += rect.height;
-                                }
-                            }
-                        }
-                    }
-                    console.log('totalHeight', totalHeight);
-                    
-                    if (this.#itemToElementMap.size > this.#initialRenderCount) {
-                        const itemsToRemove = Math.min(itemsToRender, this.#itemToElementMap.size - this.#initialRenderCount);
-                        let removedHeight = 0;
-                        
-                        for (let i = 0; i < itemsToRemove; i++) {
-                            const firstItem = items[this.#firstRenderedIndex];
-                            const firstElement = this.#itemToElementMap.get(firstItem);
-                            
-                            if (firstElement) {
-                                const rect = firstElement.getBoundingClientRect();
-                                removedHeight += rect.height;
-                                
-                                const slotName = firstElement.slot;
-                                const slot = virtualContainer.querySelector(`slot[name="${slotName}"]`);
-                                
-                                if (slot) slot.remove();
-                                this.#itemToElementMap.delete(firstItem);
-                                firstElement.remove();
-                                this.#firstRenderedIndex++;
-                            }
-                        }
-                        
-                        this.#currentPaddingTop = Math.floor(parseFloat(virtualContainer.style.paddingTop));
-                        const newPadding = Math.max(0, this.#currentPaddingTop + removedHeight);
-                        virtualContainer.style.paddingTop = `${newPadding}px`;
-                    }
-                    
-                    this.#lastRenderedIndex = itemIndex + itemsToRender;
-                    
-                    if (lastRenderedCtl) {
-                        this.#currentPaddingBottom = Math.floor(parseFloat(virtualContainer.style.paddingBottom));
-                        const newPadding = Math.max(0, this.#currentPaddingBottom - totalHeight);
-                        virtualContainer.style.paddingBottom = `${newPadding}px`;
-                    }
-                }
-                
-                // Process first visible item (load more items at the beginning)
-                if (firstVisibleEntry) {
-                    const element = firstVisibleEntry.target as BindableControl;
-                    const item = element.model;
-                    const itemIndex = items.indexOf(item);
-                    
-                    const batchSize = 10;
-                    const itemsToRender = Math.min(batchSize, itemIndex);
-                    const virtualContainer = this.itemsContainer.firstElementChild as HTMLElement;
-                    
-                    let totalHeight = 0;
-                    let firstRenderedCtl: BindableControl | null = null;
-                    
-                    for (let i = 1; i <= itemsToRender; i++) {
-                        const prevIndex = itemIndex - i;
-                        const prevItem = items[prevIndex];
-                        
-                        if (!this.#itemToElementMap.has(prevItem)) {
-                            const ctl = this.#renderItemAtIndex(prevIndex, true);
-                            
-                            if (ctl) {
-                                this.#itemToElementMap.set(prevItem, ctl);
-                                if (i === itemsToRender) {
-                                    firstRenderedCtl = ctl;
-                                }
-                                
-                                const rect = ctl.getBoundingClientRect();
-                                if (rect.height > 0) {
-                                    totalHeight += rect.height;
-                                }
-                            }
-                        }
-                    }
-                    
-                    if (this.#itemToElementMap.size > this.#initialRenderCount) {
-                        const itemsToRemove = Math.min(itemsToRender, this.#itemToElementMap.size - this.#initialRenderCount);
-                        let removedHeight = 0;
-                        
-                        for (let i = 0; i < itemsToRemove; i++) {
-                            const lastItem = items[this.#lastRenderedIndex];
-                            const lastElement = this.#itemToElementMap.get(lastItem);
-                            
-                            if (lastElement) {
-                                const rect = lastElement.getBoundingClientRect();
-                                removedHeight += rect.height;
-                                
-                                const slotName = lastElement.slot;
-                                const slot = virtualContainer.querySelector(`slot[name="${slotName}"]`);
-                                
-                                if (slot) slot.remove();
-                                this.#itemToElementMap.delete(lastItem);
-                                lastElement.remove();
-                                this.#lastRenderedIndex--;
-                            }
-                        }
-                        
-                        this.#currentPaddingBottom = Math.floor(parseFloat(virtualContainer.style.paddingBottom));
-                        const newPadding = Math.max(0, this.#currentPaddingBottom + removedHeight);
-                        virtualContainer.style.paddingBottom = `${newPadding}px`;
-                    }
-                    
-                    this.#firstRenderedIndex = itemIndex - itemsToRender;
+            this.#observer = new IntersectionObserver((entries) => {                
+                const firstElement = this.#itemToElementMap.get(items[this.#firstRenderedIndex]);
+                const lastElement = this.#itemToElementMap.get(items[this.#lastRenderedIndex]);
+                const virtualContainer = this.itemsContainer.firstElementChild as HTMLElement;
 
-                    if (firstRenderedCtl) {
-                        this.#currentPaddingTop = Math.floor(parseFloat(virtualContainer.style.paddingTop));
-                        const newPadding = Math.max(0, this.#currentPaddingTop - totalHeight);
-                        virtualContainer.style.paddingTop = `${newPadding}px`;
+                let firstItemVisible = false;
+                let lastItemVisible = false;
+
+                const entryMap = new Map(entries.map(entry => [entry.target, entry]));
+
+                if (firstElement) {
+                    const firstEntry = entryMap.get(firstElement);
+                    firstItemVisible = firstEntry ? firstEntry.isIntersecting : false;
+                }
+
+                if (lastElement) {
+                    const lastEntry = entryMap.get(lastElement);
+                    lastItemVisible = lastEntry ? lastEntry.isIntersecting : false;
+                }
+                
+                if (firstItemVisible && this.#firstRenderedIndex > 0) {
+                    console.log('First item visible, rendering items above');
+                    
+                    const itemsToRenderAbove:number = Math.min(this.#itemsPerViewport, this.#firstRenderedIndex);
+                    
+                    const scrollTop = this.itemsContainer.scrollTop;
+                    const containerHeight = this.itemsContainer.scrollHeight;
+                    
+                    for (let i = 1; i <= itemsToRenderAbove; i++) {
+                        const newIndex = this.#firstRenderedIndex - i;
+                        const newItem = items[newIndex];
+                        
+                        if (this.#itemToElementMap.has(newItem)) continue;//not sure if needed
+                        
+                        const ctl = this.#renderItemAtIndex(newIndex, true);
+                        
+                        if (ctl) {
+                            this.#itemToElementMap.set(newItem, ctl);
+                            
+                            requestAnimationFrame(() => {
+                                const rect = ctl.getBoundingClientRect();
+                                if (rect.height > 0) {
+                                    this.#currentPaddingTop = Math.floor(parseFloat(virtualContainer.style.paddingTop || '0'));
+                                    const newPadding = Math.max(0, this.#currentPaddingTop - rect.height);
+                                    virtualContainer.style.paddingTop = `${newPadding}px`;
+                                    
+                                    //scroll adjustment to prevent jumping
+                                    const heightDiff = this.itemsContainer.scrollHeight - containerHeight;
+                                    if (heightDiff > 0) {
+                                        this.itemsContainer.scrollTop = scrollTop + heightDiff;
+                                    }
+                                }
+                            });
+                        }
+                    }
+                    
+                    this.#firstRenderedIndex -= itemsToRenderAbove;
+                    
+                    const currentRenderedCount = this.#lastRenderedIndex - this.#firstRenderedIndex + 1;
+                    if (currentRenderedCount > this.#initialRenderCount) {
+                        const itemsToRemove = currentRenderedCount - this.#initialRenderCount;
+                        
+                        requestAnimationFrame(() => {
+                            for (let i = 0; i < itemsToRemove; i++) {
+                                const lastItem = items[this.#lastRenderedIndex];
+                                const lastElement = this.#itemToElementMap.get(lastItem);
+                                
+                                if (lastElement) {
+                                    const rect = lastElement.getBoundingClientRect();
+                                    
+                                    const slotName = lastElement.slot;
+                                    const slot = virtualContainer.querySelector(`slot[name="${slotName}"]`);
+                                    
+                                    this.#currentPaddingBottom = Math.floor(parseFloat(virtualContainer.style.paddingBottom || '0'));
+                                    const newPadding = Math.max(0, this.#currentPaddingBottom + rect.height);
+                                    virtualContainer.style.paddingBottom = `${newPadding}px`;
+                                    
+                                    if (slot) slot.remove();
+                                    this.#itemToElementMap.delete(lastItem);
+                                    lastElement.remove();
+                                    this.#lastRenderedIndex--;
+                                }
+                            }
+                        });
                     }
                 }
                 
-                // Update padding when reaching boundaries
+                if (lastItemVisible && this.#lastRenderedIndex < items.length - 1) {
+                    
+                    const itemsToRenderBelow:number = Math.min(this.#itemsPerViewport, items.length - 1 - this.#lastRenderedIndex);
+                    
+                    for (let i = 1; i <= itemsToRenderBelow; i++) {
+                        const newIndex = this.#lastRenderedIndex + i;
+                        const newItem = items[newIndex];
+                        
+                        if (this.#itemToElementMap.has(newItem)) continue;//not sure if needed
+                        
+                        const ctl = this.#renderItemAtIndex(newIndex);
+                        
+                        if (ctl) {
+                            this.#itemToElementMap.set(newItem, ctl);
+                            
+                            requestAnimationFrame(() => {
+                                const rect = ctl.getBoundingClientRect();
+                                if (rect.height > 0) {
+                                    this.#currentPaddingBottom = Math.floor(parseFloat(virtualContainer.style.paddingBottom || '0'));
+                                    const newPadding = Math.max(0, this.#currentPaddingBottom - rect.height);
+                                    virtualContainer.style.paddingBottom = `${newPadding}px`;
+                                }
+                            });
+                        }
+                    }
+                    
+                    this.#lastRenderedIndex += itemsToRenderBelow;
+                    
+                    const currentRenderedCount = this.#lastRenderedIndex - this.#firstRenderedIndex + 1;
+                    if (currentRenderedCount > this.#initialRenderCount) {
+                        const itemsToRemove = currentRenderedCount - this.#initialRenderCount;
+                        
+                        requestAnimationFrame(() => {
+                            for (let i = 0; i < itemsToRemove; i++) {
+                                const firstItem = items[this.#firstRenderedIndex];
+                                const firstElement = this.#itemToElementMap.get(firstItem);
+                                
+                                if (firstElement) {
+                                    const rect = firstElement.getBoundingClientRect();
+                                    
+                                    const slotName = firstElement.slot;
+                                    const slot = virtualContainer.querySelector(`slot[name="${slotName}"]`);
+                                    
+                                    this.#currentPaddingTop = Math.floor(parseFloat(virtualContainer.style.paddingTop || '0'));
+                                    const newPadding = Math.max(0, this.#currentPaddingTop + rect.height);
+                                    virtualContainer.style.paddingTop = `${newPadding}px`;
+                                    
+                                    if (slot) slot.remove();
+                                    this.#itemToElementMap.delete(firstItem);
+                                    firstElement.remove();
+                                    this.#firstRenderedIndex++;
+                                }
+                            }
+                        });
+                    }
+                }
+                if (!firstItemVisible && !lastItemVisible && this.#isViewportEmpty()) { //not sure about this check
+                    console.log('Viewport is empty, handling empty viewport');
+                    this.#handleEmptyViewport();
+                }
+
                 if (this.#lastRenderedIndex === items.length - 1) {
-                    const virtualContainer = this.itemsContainer.firstElementChild as HTMLElement;
                     virtualContainer.style.paddingBottom = '0px';
                     this.#currentPaddingBottom = 0;
                 }
-                
+
                 if (this.#firstRenderedIndex === 0) {
-                    const virtualContainer = this.itemsContainer.firstElementChild as HTMLElement;
                     virtualContainer.style.paddingTop = '0px';
                     this.#currentPaddingTop = 0;
                 }
             }, {
                 root: div,
-                rootMargin: `${this.#initialRenderCount * this.#averageItemHeight + 300}px`,
+                rootMargin: '300px',
                 threshold: 0.0
             });
             
@@ -440,26 +415,24 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                 this.#itemToElementMap.set(item, ctl);
                 this.#observer.observe(ctl);
             }
-            requestAnimationFrame(() => {
-                const items = this.items as any[];
-                const lastRenderedItem = items[this.#lastRenderedIndex];
-                const lastElement = this.#itemToElementMap.get(lastRenderedItem);
-                
-                if (!lastElement) return;
-                
-                const rect = lastElement.getBoundingClientRect();
-                const containerRect = virtualContainer.getBoundingClientRect();
-        
-                const totalRenderedHeight = (rect.bottom - containerRect.top);
-                
-                this.#averageItemHeight = totalRenderedHeight / (this.#lastRenderedIndex + 1);
-                this.#estimatedTotalHeight = this.#averageItemHeight * items.length;
-                
-                virtualContainer.style.paddingTop = '0px';
-                virtualContainer.style.paddingBottom = `${this.#estimatedTotalHeight - totalRenderedHeight}px`;
-                console.log('estimatedTotalHeight', this.#estimatedTotalHeight);
+            requestAnimationFrame(() => { // average item height is not correct without requestAnimationFrame()
+            const lastRenderedItem = items[this.#lastRenderedIndex];
+            const lastElement = this.#itemToElementMap.get(lastRenderedItem);
+            if (!lastElement) return;
+            
+            const rect = lastElement.getBoundingClientRect();
+    
+            const totalRenderedHeight: number = (rect.height + rect.top);
+            
+            this.#averageItemHeight = totalRenderedHeight / this.#initialRenderCount; //suspicious
+            this.#estimatedTotalHeight = this.#averageItemHeight * items.length;
+            
+            virtualContainer.style.paddingTop = '0px';
+            virtualContainer.style.paddingBottom = `${this.#estimatedTotalHeight - totalRenderedHeight}px`;
+            const viewportHeight = div.clientHeight;
+            this.#itemsPerViewport = Math.ceil(viewportHeight / this.#averageItemHeight);
+            console.log(this.#itemsPerViewport);
             });
-            this.itemsContainer.addEventListener('scroll', this.#scrollHandler);
         }
     }
     #renderItemAtIndex(index: number, insertAtBeginning: boolean = false): BindableControl | null {
@@ -540,7 +513,6 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         this.#lastRenderedIndex = endIndex;
     }
     #isViewportEmpty(): boolean {
-        // Instead of querying the DOM, check if any items in the map are visible
         for (const element of this.#itemToElementMap.values()) {
             const rect = element.getBoundingClientRect();
             
