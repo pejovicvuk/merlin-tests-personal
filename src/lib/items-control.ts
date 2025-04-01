@@ -200,13 +200,14 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         }
 
         if (items === this.#displayedItems) return;
-
-        //if (Array.isArray(this.#displayedItems)) {
-        //    const tracker = getTracker(this.#displayedItems);
-        //    if (tracker !== undefined) {
-        //        tracker[removeArrayListener](this.#onArrayChanged);
-        //    }
-        //}
+        
+        // Remove array listener from previous items array
+        if (Array.isArray(this.#displayedItems)) {
+            const tracker = getTracker(this.#displayedItems);
+            if (tracker !== undefined) {
+                tracker[removeArrayListener](this.#onVirtualizedArrayChanged);
+            }
+        }
         
         this.#itemToElementMap.clear();
         
@@ -214,17 +215,18 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         div.innerHTML = '';
         
         div.style.overflow = 'auto';
-        div.style.height = this.getAttribute('height') || '60vh';
+        div.style.height = this.getAttribute('height') || '60vh'; //fix later
         
         this.#displayedItems = items;
 
         if (items !== undefined) {
-            //if (Array.isArray(this.#displayedItems)) {
-            //    const tracker = getTracker(this.#displayedItems);
-            //    if (tracker !== undefined) {
-            //        tracker[addArrayListener](this.#onArrayChanged);
-            //    }
-            //}
+            // Add array listener to new items array
+            if (Array.isArray(this.#displayedItems)) {
+                const tracker = getTracker(this.#displayedItems);
+                if (tracker !== undefined) {
+                    tracker[addArrayListener](this.#onVirtualizedArrayChanged);
+                }
+            }
             
             const virtualContainer = document.createElement('div');
             virtualContainer.style.display = 'flex';
@@ -238,8 +240,8 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                 const lastElement = this.#itemToElementMap.get(items[this.#lastRenderedIndex]);
                 const virtualContainer = this.itemsContainer.firstElementChild as HTMLElement;
 
-                let firstItemVisible = false;
-                let lastItemVisible = false;
+                let firstItemVisible: boolean = false;
+                let lastItemVisible: boolean = false;
 
                 const entryMap = new Map(entries.map(entry => [entry.target, entry]));
 
@@ -256,7 +258,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                 if (firstItemVisible && this.#firstRenderedIndex > 0) {
                     console.log('First item visible, rendering items above');
                     
-                    const itemsToRenderAbove:number = Math.min(this.#itemsPerViewport, this.#firstRenderedIndex);
+                    const itemsToRenderAbove = Math.min(this.#itemsPerViewport, this.#firstRenderedIndex);
                     
                     const scrollTop = this.itemsContainer.scrollTop;
                     const containerHeight = this.itemsContainer.scrollHeight;
@@ -291,38 +293,33 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                     
                     this.#firstRenderedIndex -= itemsToRenderAbove;
                     
-                    const currentRenderedCount = this.#lastRenderedIndex - this.#firstRenderedIndex + 1;
-                    if (currentRenderedCount > this.#initialRenderCount) {
-                        const itemsToRemove = currentRenderedCount - this.#initialRenderCount;
-                        
-                        requestAnimationFrame(() => {
-                            for (let i = 0; i < itemsToRemove; i++) {
-                                const lastItem = items[this.#lastRenderedIndex];
-                                const lastElement = this.#itemToElementMap.get(lastItem);
+                    requestAnimationFrame(() => {
+                        for (let i = 0; i < itemsToRenderAbove; i++) {
+                            const lastItem = items[this.#lastRenderedIndex];
+                            const lastElement = this.#itemToElementMap.get(lastItem);
+                            
+                            if (lastElement) {
+                                const rect = lastElement.getBoundingClientRect();
                                 
-                                if (lastElement) {
-                                    const rect = lastElement.getBoundingClientRect();
-                                    
-                                    const slotName = lastElement.slot;
-                                    const slot = virtualContainer.querySelector(`slot[name="${slotName}"]`);
-                                    
-                                    this.#currentPaddingBottom = Math.floor(parseFloat(virtualContainer.style.paddingBottom || '0'));
-                                    const newPadding = Math.max(0, this.#currentPaddingBottom + rect.height);
-                                    virtualContainer.style.paddingBottom = `${newPadding}px`;
-                                    
-                                    if (slot) slot.remove();
-                                    this.#itemToElementMap.delete(lastItem);
-                                    lastElement.remove();
-                                    this.#lastRenderedIndex--;
-                                }
+                                const slotName = lastElement.slot;
+                                const slot = virtualContainer.querySelector(`slot[name="${slotName}"]`);
+                                
+                                this.#currentPaddingBottom = Math.floor(parseFloat(virtualContainer.style.paddingBottom || '0'));
+                                const newPadding = Math.max(0, this.#currentPaddingBottom + rect.height);
+                                virtualContainer.style.paddingBottom = `${newPadding}px`;
+                                
+                                if (slot) slot.remove();
+                                this.#itemToElementMap.delete(lastItem);
+                                lastElement.remove();
+                                this.#lastRenderedIndex--;
                             }
-                        });
-                    }
+                        }
+                    });
                 }
                 
                 if (lastItemVisible && this.#lastRenderedIndex < items.length - 1) {
                     
-                    const itemsToRenderBelow:number = Math.min(this.#itemsPerViewport, items.length - 1 - this.#lastRenderedIndex);
+                    const itemsToRenderBelow = Math.min(this.#itemsPerViewport, items.length - 1 - this.#lastRenderedIndex);
                     
                     for (let i = 1; i <= itemsToRenderBelow; i++) {
                         const newIndex = this.#lastRenderedIndex + i;
@@ -348,33 +345,28 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                     
                     this.#lastRenderedIndex += itemsToRenderBelow;
                     
-                    const currentRenderedCount = this.#lastRenderedIndex - this.#firstRenderedIndex + 1;
-                    if (currentRenderedCount > this.#initialRenderCount) {
-                        const itemsToRemove = currentRenderedCount - this.#initialRenderCount;
-                        
-                        requestAnimationFrame(() => {
-                            for (let i = 0; i < itemsToRemove; i++) {
-                                const firstItem = items[this.#firstRenderedIndex];
-                                const firstElement = this.#itemToElementMap.get(firstItem);
+                    requestAnimationFrame(() => {
+                        for (let i = 0; i < itemsToRenderBelow; i++) {
+                            const firstItem = items[this.#firstRenderedIndex];
+                            const firstElement = this.#itemToElementMap.get(firstItem);
+                            
+                            if (firstElement) {
+                                const rect = firstElement.getBoundingClientRect();
                                 
-                                if (firstElement) {
-                                    const rect = firstElement.getBoundingClientRect();
-                                    
-                                    const slotName = firstElement.slot;
-                                    const slot = virtualContainer.querySelector(`slot[name="${slotName}"]`);
-                                    
-                                    this.#currentPaddingTop = Math.floor(parseFloat(virtualContainer.style.paddingTop || '0'));
-                                    const newPadding = Math.max(0, this.#currentPaddingTop + rect.height);
-                                    virtualContainer.style.paddingTop = `${newPadding}px`;
-                                    
-                                    if (slot) slot.remove();
-                                    this.#itemToElementMap.delete(firstItem);
-                                    firstElement.remove();
-                                    this.#firstRenderedIndex++;
-                                }
+                                const slotName = firstElement.slot;
+                                const slot = virtualContainer.querySelector(`slot[name="${slotName}"]`);
+                                
+                                this.#currentPaddingTop = Math.floor(parseFloat(virtualContainer.style.paddingTop || '0'));
+                                const newPadding = Math.max(0, this.#currentPaddingTop + rect.height);
+                                virtualContainer.style.paddingTop = `${newPadding}px`;
+                                
+                                if (slot) slot.remove();
+                                this.#itemToElementMap.delete(firstItem);
+                                firstElement.remove();
+                                this.#firstRenderedIndex++;
                             }
-                        });
-                    }
+                        }
+                    });
                 }
                 if (!firstItemVisible && !lastItemVisible && this.#isViewportEmpty()) { //not sure about this check
                     console.log('Viewport is empty, handling empty viewport');
@@ -392,7 +384,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                 }
             }, {
                 root: div,
-                rootMargin: '300px',
+                rootMargin: '100%',
                 threshold: 0.0
             });
             
@@ -431,7 +423,6 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
             virtualContainer.style.paddingBottom = `${this.#estimatedTotalHeight - totalRenderedHeight}px`;
             const viewportHeight = div.clientHeight;
             this.#itemsPerViewport = Math.ceil(viewportHeight / this.#averageItemHeight);
-            console.log(this.#itemsPerViewport);
             });
         }
     }
@@ -691,5 +682,187 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
 
     static #clearRecentlyDeletedCallback(ctl: ItemsControl) {
         ctl.#recentlyDeleted = undefined;
+    }
+
+    // New array change handler for virtualized list
+    #onVirtualizedArrayChanged = (arr: any[], index: number, inserted: number, deleted: number, deletedItems: any | any[] | undefined) => {
+        // Only handle changes that affect the currently rendered range
+        const isAffectingRenderedRange = 
+            (index <= this.#lastRenderedIndex && index >= this.#firstRenderedIndex) || 
+            (index + inserted > this.#firstRenderedIndex && index < this.#lastRenderedIndex) ||
+            (index + deleted > this.#firstRenderedIndex && index < this.#lastRenderedIndex);
+        
+        if (!isAffectingRenderedRange) {
+            // If changes are outside our rendered range, just update indices
+            if (index <= this.#firstRenderedIndex) {
+                // Changes before our range - adjust indices
+                this.#firstRenderedIndex += inserted - deleted;
+                this.#lastRenderedIndex += inserted - deleted;
+                
+                // Update padding to reflect the changes
+                const virtualContainer = this.itemsContainer.firstElementChild as HTMLElement;
+                if (virtualContainer) {
+                    const heightDiff = (inserted - deleted) * this.#averageItemHeight;
+                    this.#currentPaddingTop = Math.floor(parseFloat(virtualContainer.style.paddingTop || '0'));
+                    virtualContainer.style.paddingTop = `${Math.max(0, this.#currentPaddingTop + heightDiff)}px`;
+                }
+            }
+            return;
+        }
+        
+        // For changes within the rendered range, we need to update the DOM
+        const virtualContainer = this.itemsContainer.firstElementChild as HTMLElement;
+        
+        // Handle item updates (same number of items, just changed)
+        let same = Math.min(inserted, deleted);
+        inserted -= same;
+        deleted -= same;
+        
+        // Update existing items
+        while(same-- > 0) {
+            if (index < this.#firstRenderedIndex || index > this.#lastRenderedIndex) {
+                index++;
+                continue;
+            }
+            
+            const item = arr[index];
+            const slots = virtualContainer.querySelectorAll('slot');
+            const slotIndex = index - this.#firstRenderedIndex;
+            
+            if (slotIndex >= 0 && slotIndex < slots.length) {
+                const slot = slots[slotIndex] as HTMLSlotElement;
+                const assigned = slot.assignedElements();
+                
+                if (assigned.length === 1) {
+                    const ctl = assigned[0] as BindableControl;
+                    const prevItem = ctl.model;
+                    
+                    if (prevItem === item) {
+                        index++;
+                        continue;
+                    }
+                    
+                    if (this.getItemToTemplateId(item) !== this.getItemToTemplateId(prevItem)) {
+                        ctl.innerHTML = '';
+                        ctl.append(this.#getItemTemplateContent(item).cloneNode(true));
+                    }
+                    
+                    ctl.model = item;
+                    this.#itemToElementMap.delete(prevItem);
+                    this.#itemToElementMap.set(item, ctl);
+                }
+            }
+            index++;
+        }
+        
+        // Handle insertions
+        if (inserted > 0) {
+            // If insertions are within our rendered range
+            if (index >= this.#firstRenderedIndex && index <= this.#lastRenderedIndex + 1) {
+                for (let i = 0; i < inserted; i++) {
+                    const insertIndex = index + i;
+                    
+                    if (insertIndex > this.#lastRenderedIndex) {
+                        // We're inserting beyond our current last rendered item
+                        this.#lastRenderedIndex++;
+                        continue;
+                    }
+                    
+                    const item = arr[insertIndex];
+                    
+                    // Skip if this item is already rendered
+                    if (this.#itemToElementMap.has(item)) continue;
+                    
+                    const ctl = this.createItemContainer();
+                    const template = this.#getItemTemplateContent(item);
+                    ctl.append(template.cloneNode(true));
+                    ctl.model = item;
+                    
+                    const slotName = 'i-' + this.#slotCount++;
+                    ctl.slot = slotName;
+                    this.appendChild(ctl);
+                    
+                    const slot = document.createElement('slot');
+                    slot.name = slotName;
+                    
+                    // Find the correct position to insert the slot
+                    const slots = Array.from(virtualContainer.querySelectorAll('slot'));
+                    const insertPosition = insertIndex - this.#firstRenderedIndex;
+                    
+                    if (insertPosition < slots.length && slots[insertPosition]) {
+                        virtualContainer.insertBefore(slot, slots[insertPosition]);
+                    } else {
+                        virtualContainer.appendChild(slot);
+                    }
+                    
+                    this.#itemToElementMap.set(item, ctl);
+                    this.#observer!.observe(ctl);
+                    
+                    // Shift all indices after this one
+                    for (let j = this.#lastRenderedIndex; j > insertIndex; j--) {
+                        const shiftedItem = arr[j];
+                        const element = this.#itemToElementMap.get(shiftedItem);
+                        if (element) {
+                            // Update the element's position in the DOM if needed
+                            // This might not be necessary if the slots are already in the right order
+                        }
+                    }
+                }
+            } else {
+                // Insertions are outside our range, just update indices
+                if (index < this.#firstRenderedIndex) {
+                    this.#firstRenderedIndex += inserted;
+                    this.#lastRenderedIndex += inserted;
+                }
+            }
+        }
+        
+        // Handle deletions
+        if (deleted > 0) {
+            for (let i = 0; i < deleted; i++) {
+                const deleteIndex = index + i;
+                
+                if (deleteIndex >= this.#firstRenderedIndex && deleteIndex <= this.#lastRenderedIndex) {
+                    // This item is in our rendered range, remove it
+                    const deletedItem = deletedItems instanceof Array ? deletedItems[i] : deletedItems;
+                    const element = this.#itemToElementMap.get(deletedItem);
+                    
+                    if (element) {
+                        const slotName = element.slot;
+                        const slot = virtualContainer.querySelector(`slot[name="${slotName}"]`);
+                        
+                        if (slot) slot.remove();
+                        this.#itemToElementMap.delete(deletedItem);
+                        element.remove();
+                    }
+                }
+            }
+            
+            // Update indices
+            this.#lastRenderedIndex -= Math.min(deleted, this.#lastRenderedIndex - this.#firstRenderedIndex + 1);
+        }
+        
+        // Update padding to reflect the changes
+        this.#updateVirtualPadding();
+    };
+
+    // Helper method to update virtual padding
+    #updateVirtualPadding() {
+        const items = this.#displayedItems as any[];
+        if (!items || !Array.isArray(items)) return;
+        
+        const virtualContainer = this.itemsContainer.firstElementChild as HTMLElement;
+        if (!virtualContainer) return;
+        
+        // Update top padding
+        const paddingTop = this.#firstRenderedIndex * this.#averageItemHeight;
+        virtualContainer.style.paddingTop = `${paddingTop}px`;
+        this.#currentPaddingTop = paddingTop;
+        
+        // Update bottom padding
+        const itemsBelow = items.length - this.#lastRenderedIndex - 1;
+        const paddingBottom = itemsBelow * this.#averageItemHeight;
+        virtualContainer.style.paddingBottom = `${paddingBottom}px`;
+        this.#currentPaddingBottom = paddingBottom;
     }
 }

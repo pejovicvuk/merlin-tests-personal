@@ -7,7 +7,7 @@ class TextModel {
     // disable
     enabled = true;
 
-    array = toTracked(Array.from({ length: 1000 }, (_, i) => {
+    array = toTracked(Array.from({ length: 10000 }, (_, i) => {
         // Create items with varying content to produce different heights
         const type = i % 5; // Create 5 different types of items
         
@@ -75,21 +75,26 @@ const textModel = toTracked(new TextModel());
 const modelControl = document.getElementById('model') as HtmlControl
 modelControl.model = textModel;
 
+await sleepAsync(3000);
+textModel.array.splice(3, 1); // Remove the item at index 3
+console.log("Removed item at position 3");
 await sleepAsync(1000);
+textModel.array[1] = { 
+    text: "Item 1 (modified)",
+    index: 1,
+    size: 'small'
+};
 
-// for (let i = 0; i < 6; i++) {
-//     await sleepAsync(1000);
-//     textModel.array.push(textModel.array.length + 1);
-// }
+await sleepAsync(5000);
+textModel.selectedArrayIndex = 7;
 
-// await sleepAsync(1000);
-// textModel.array[1] = 0;
+await sleepAsync(1000);
+textModel.array.splice(2, 0, 
+  { text: "New Item 1", index: 9, size: 'small' },
+  { text: "New Item 2", index: 9, size: 'small' },
+  { text: "New Item 3", index: 9, size: 'small' }
+);
 
-// await sleepAsync(5000);
-// textModel.selectedArrayIndex = 7;
-
-// await sleepAsync(1000);
-// textModel.array.splice(2, 0, 9, 9, 9);
-
-// await sleepAsync(1000);
-// textModel.array.splice(5, 1);
+await sleepAsync(1000);
+textModel.array.splice(5, 1);
+textModel.array.push({ text: "New Item soma", index: 9, size: 'small' });
