@@ -201,11 +201,10 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
 
         if (items === this.#displayedItems) return;
         
-        // Remove array listener from previous items array
         if (Array.isArray(this.#displayedItems)) {
             const tracker = getTracker(this.#displayedItems);
             if (tracker !== undefined) {
-                tracker[removeArrayListener](this.#onVirtualizedArrayChanged);
+                tracker[removeArrayListener](this.#onArrayChangedVirtualized);
             }
         }
         
@@ -215,16 +214,15 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         div.innerHTML = '';
         
         div.style.overflow = 'auto';
-        div.style.height = this.getAttribute('height') || '60vh'; //fix later
+        div.style.height = this.getAttribute('height') || '60vh';
         
         this.#displayedItems = items;
 
         if (items !== undefined) {
-            // Add array listener to new items array
-            if (Array.isArray(this.#displayedItems)) {
-                const tracker = getTracker(this.#displayedItems);
+            if (Array.isArray(items)) {
+                const tracker = getTracker(items);
                 if (tracker !== undefined) {
-                    tracker[addArrayListener](this.#onVirtualizedArrayChanged);
+                    tracker[addArrayListener](this.#onArrayChangedVirtualized);
                 }
             }
             
@@ -369,7 +367,6 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                     });
                 }
                 if (!firstItemVisible && !lastItemVisible && this.#isViewportEmpty()) { //not sure about this check
-                    console.log('Viewport is empty, handling empty viewport');
                     this.#handleEmptyViewport();
                 }
 
@@ -408,21 +405,21 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                 this.#observer.observe(ctl);
             }
             requestAnimationFrame(() => { // average item height is not correct without requestAnimationFrame()
-            const lastRenderedItem = items[this.#lastRenderedIndex];
-            const lastElement = this.#itemToElementMap.get(lastRenderedItem);
-            if (!lastElement) return;
-            
-            const rect = lastElement.getBoundingClientRect();
-    
-            const totalRenderedHeight: number = (rect.height + rect.top);
-            
-            this.#averageItemHeight = totalRenderedHeight / this.#initialRenderCount; //suspicious
-            this.#estimatedTotalHeight = this.#averageItemHeight * items.length;
-            
-            virtualContainer.style.paddingTop = '0px';
-            virtualContainer.style.paddingBottom = `${this.#estimatedTotalHeight - totalRenderedHeight}px`;
-            const viewportHeight = div.clientHeight;
-            this.#itemsPerViewport = Math.ceil(viewportHeight / this.#averageItemHeight);
+                const lastRenderedItem = items[this.#lastRenderedIndex];
+                const lastElement = this.#itemToElementMap.get(lastRenderedItem);
+                if (!lastElement) return;
+                
+                const rect = lastElement.getBoundingClientRect();
+                
+                const totalRenderedHeight: number = (rect.height + rect.top);
+                
+                this.#averageItemHeight = totalRenderedHeight / this.#initialRenderCount; //suspicious
+                this.#estimatedTotalHeight = this.#averageItemHeight * items.length;
+                
+                virtualContainer.style.paddingTop = '0px';
+                virtualContainer.style.paddingBottom = `${this.#estimatedTotalHeight - totalRenderedHeight}px`;
+                const viewportHeight = div.clientHeight;
+                this.#itemsPerViewport = Math.ceil(viewportHeight / this.#averageItemHeight);
             });
         }
     }
@@ -684,41 +681,34 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         ctl.#recentlyDeleted = undefined;
     }
 
-    // New array change handler for virtualized list
-    #onVirtualizedArrayChanged = (arr: any[], index: number, inserted: number, deleted: number, deletedItems: any | any[] | undefined) => {
-        // Only handle changes that affect the currently rendered range
+    #onArrayChangedVirtualized = (arr: any[], index: number, inserted: number, deleted: number, deletedItems: any | any[] | undefined) => {
         const isAffectingRenderedRange = 
             (index <= this.#lastRenderedIndex && index >= this.#firstRenderedIndex) || 
             (index + inserted > this.#firstRenderedIndex && index < this.#lastRenderedIndex) ||
             (index + deleted > this.#firstRenderedIndex && index < this.#lastRenderedIndex);
         
+        //handling changes outside of the rendered range
         if (!isAffectingRenderedRange) {
-            // If changes are outside our rendered range, just update indices
             if (index <= this.#firstRenderedIndex) {
-                // Changes before our range - adjust indices
                 this.#firstRenderedIndex += inserted - deleted;
                 this.#lastRenderedIndex += inserted - deleted;
                 
-                // Update padding to reflect the changes
                 const virtualContainer = this.itemsContainer.firstElementChild as HTMLElement;
                 if (virtualContainer) {
                     const heightDiff = (inserted - deleted) * this.#averageItemHeight;
-                    this.#currentPaddingTop = Math.floor(parseFloat(virtualContainer.style.paddingTop || '0'));
+                    this.#currentPaddingTop = Math.floor(parseFloat(virtualContainer.style.paddingTop));
                     virtualContainer.style.paddingTop = `${Math.max(0, this.#currentPaddingTop + heightDiff)}px`;
                 }
             }
             return;
         }
         
-        // For changes within the rendered range, we need to update the DOM
         const virtualContainer = this.itemsContainer.firstElementChild as HTMLElement;
-        
-        // Handle item updates (same number of items, just changed)
+
         let same = Math.min(inserted, deleted);
         inserted -= same;
         deleted -= same;
         
-        // Update existing items
         while(same-- > 0) {
             if (index < this.#firstRenderedIndex || index > this.#lastRenderedIndex) {
                 index++;
@@ -755,22 +745,18 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
             index++;
         }
         
-        // Handle insertions
         if (inserted > 0) {
-            // If insertions are within our rendered range
             if (index >= this.#firstRenderedIndex && index <= this.#lastRenderedIndex + 1) {
                 for (let i = 0; i < inserted; i++) {
                     const insertIndex = index + i;
                     
                     if (insertIndex > this.#lastRenderedIndex) {
-                        // We're inserting beyond our current last rendered item
                         this.#lastRenderedIndex++;
                         continue;
                     }
                     
                     const item = arr[insertIndex];
                     
-                    // Skip if this item is already rendered
                     if (this.#itemToElementMap.has(item)) continue;
                     
                     const ctl = this.createItemContainer();
@@ -785,7 +771,6 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                     const slot = document.createElement('slot');
                     slot.name = slotName;
                     
-                    // Find the correct position to insert the slot
                     const slots = Array.from(virtualContainer.querySelectorAll('slot'));
                     const insertPosition = insertIndex - this.#firstRenderedIndex;
                     
@@ -797,19 +782,8 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                     
                     this.#itemToElementMap.set(item, ctl);
                     this.#observer!.observe(ctl);
-                    
-                    // Shift all indices after this one
-                    for (let j = this.#lastRenderedIndex; j > insertIndex; j--) {
-                        const shiftedItem = arr[j];
-                        const element = this.#itemToElementMap.get(shiftedItem);
-                        if (element) {
-                            // Update the element's position in the DOM if needed
-                            // This might not be necessary if the slots are already in the right order
-                        }
-                    }
                 }
             } else {
-                // Insertions are outside our range, just update indices
                 if (index < this.#firstRenderedIndex) {
                     this.#firstRenderedIndex += inserted;
                     this.#lastRenderedIndex += inserted;
@@ -817,13 +791,11 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
             }
         }
         
-        // Handle deletions
         if (deleted > 0) {
             for (let i = 0; i < deleted; i++) {
                 const deleteIndex = index + i;
                 
                 if (deleteIndex >= this.#firstRenderedIndex && deleteIndex <= this.#lastRenderedIndex) {
-                    // This item is in our rendered range, remove it
                     const deletedItem = deletedItems instanceof Array ? deletedItems[i] : deletedItems;
                     const element = this.#itemToElementMap.get(deletedItem);
                     
@@ -838,15 +810,12 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                 }
             }
             
-            // Update indices
             this.#lastRenderedIndex -= Math.min(deleted, this.#lastRenderedIndex - this.#firstRenderedIndex + 1);
         }
         
-        // Update padding to reflect the changes
         this.#updateVirtualPadding();
     };
 
-    // Helper method to update virtual padding
     #updateVirtualPadding() {
         const items = this.#displayedItems as any[];
         if (!items || !Array.isArray(items)) return;
@@ -854,12 +823,10 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         const virtualContainer = this.itemsContainer.firstElementChild as HTMLElement;
         if (!virtualContainer) return;
         
-        // Update top padding
         const paddingTop = this.#firstRenderedIndex * this.#averageItemHeight;
         virtualContainer.style.paddingTop = `${paddingTop}px`;
         this.#currentPaddingTop = paddingTop;
         
-        // Update bottom padding
         const itemsBelow = items.length - this.#lastRenderedIndex - 1;
         const paddingBottom = itemsBelow * this.#averageItemHeight;
         virtualContainer.style.paddingBottom = `${paddingBottom}px`;
