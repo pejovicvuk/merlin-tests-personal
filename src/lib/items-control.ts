@@ -199,10 +199,14 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
             items = undefined;
         }
 
-        if (items === this.#displayedItems) return;
+        const currentItems = Array.from(this.#itemToElementMap.keys()).length > 0 ? 
+            this.items : undefined;
         
-        if (Array.isArray(this.#displayedItems)) {
-            const tracker = getTracker(this.#displayedItems);
+        if (items === currentItems) return;
+        
+        // remove listener from previous array
+        if (Array.isArray(currentItems)) {
+            const tracker = getTracker(currentItems);
             if (tracker !== undefined) {
                 tracker[removeArrayListener](this.#onArrayChangedVirtualized);
             }
@@ -216,7 +220,6 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         div.style.overflow = 'auto';
         div.style.height = this.getAttribute('height') || '60vh';
         
-        this.#displayedItems = items;
 
         if (items !== undefined) {
             if (Array.isArray(items)) {
@@ -424,7 +427,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         }
     }
     #renderItemAtIndex(index: number, insertAtBeginning: boolean = false): BindableControl | null {
-        const items = this.#displayedItems as any[];
+        const items = this.items as any[];
         if (index < 0 || index >= items.length || this.#itemToElementMap.has(items[index])) {
             return null;
         }
@@ -456,7 +459,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         return ctl;
     }
     #handleEmptyViewport(): void {
-        const items = this.#displayedItems as any[];
+        const items = this.items as any[];
         if (!items || !Array.isArray(items)) return;
         
         const container = this.itemsContainer;
@@ -817,8 +820,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
     };
 
     #updateVirtualPadding() {
-        const items = this.#displayedItems as any[];
-        if (!items || !Array.isArray(items)) return;
+        const items = this.items as any[];
         
         const virtualContainer = this.itemsContainer.firstElementChild as HTMLElement;
         if (!virtualContainer) return;

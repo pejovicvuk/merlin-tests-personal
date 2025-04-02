@@ -97,4 +97,4 @@ textModel.array.splice(2, 0,
 
 await sleepAsync(1000);
 textModel.array.splice(5, 1);
-textModel.array.push({ text: "New Item soma", index: 9, size: 'small' });
+textModel.array.push({ text: "New Item test", index: 9, size: 'small' });
