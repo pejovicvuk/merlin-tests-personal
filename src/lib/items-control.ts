@@ -693,16 +693,23 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         
         //handling changes outside of the rendered range
         if (!isAffectingRenderedRange) {
+            const virtualContainer = this.itemsContainer.firstElementChild as HTMLElement;
+            if (!virtualContainer) return;
+            
             if (index <= this.#firstRenderedIndex) {
                 this.#firstRenderedIndex += inserted - deleted;
                 this.#lastRenderedIndex += inserted - deleted;
                 
-                const virtualContainer = this.itemsContainer.firstElementChild as HTMLElement;
-                if (virtualContainer) {
-                    const heightDiff = (inserted - deleted) * this.#averageItemHeight;
-                    this.#currentPaddingTop = Math.floor(parseFloat(virtualContainer.style.paddingTop));
-                    virtualContainer.style.paddingTop = `${Math.max(0, this.#currentPaddingTop + heightDiff)}px`;
-                }
+                const heightDiff = (inserted - deleted) * this.#averageItemHeight;
+                this.#currentPaddingTop = Math.floor(parseFloat(virtualContainer.style.paddingTop || '0'));
+                
+                virtualContainer.style.paddingTop = `${Math.max(0, this.#currentPaddingTop + heightDiff)}px`;
+            } 
+            else if (index > this.#lastRenderedIndex) {
+                const heightDiff = (inserted - deleted) * this.#averageItemHeight;
+                this.#currentPaddingBottom = Math.floor(parseFloat(virtualContainer.style.paddingBottom || '0'));
+                
+                virtualContainer.style.paddingBottom = `${Math.max(0, this.#currentPaddingBottom - heightDiff)}px`;
             }
             return;
         }
