@@ -54,5 +54,5 @@ items-control::part(container) {
 }
 
 items-control > model-control {
-    color: red;
+    color: rgb(22, 22, 22);
 }

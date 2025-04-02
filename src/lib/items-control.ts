@@ -370,6 +370,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                     });
                 }
                 if (!firstItemVisible && !lastItemVisible && this.#isViewportEmpty()) { //not sure about this check
+                    console.log('no items are visible');
                     this.#handleEmptyViewport();
                 }
 
@@ -421,7 +422,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                 
                 virtualContainer.style.paddingTop = '0px';
                 virtualContainer.style.paddingBottom = `${this.#estimatedTotalHeight - totalRenderedHeight}px`;
-                const viewportHeight = div.clientHeight;
+                const viewportHeight: number = div.clientHeight;
                 this.#itemsPerViewport = Math.ceil(viewportHeight / this.#averageItemHeight);
             });
         }
@@ -459,8 +460,8 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         return ctl;
     }
     #handleEmptyViewport(): void {
+        console.log('handleEmptyViewport() called');
         const items = this.items as any[];
-        if (!items || !Array.isArray(items)) return;
         
         const container = this.itemsContainer;
         const virtualContainer = container.firstElementChild as HTMLElement;
