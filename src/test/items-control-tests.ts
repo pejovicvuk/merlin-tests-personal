@@ -3,6 +3,62 @@ import '../lib/index.js';
 
 
 class TextModel {
+    setupResizableContainer = () => {
+        const itemsControl = document.querySelector('items-control');
+        if (!itemsControl) return;
+        
+        // Get the container div inside the shadow DOM
+        const container = itemsControl.shadowRoot?.querySelector('div[part="container"]') as HTMLElement;
+        if (!container) return;
+        
+        // Style the container to indicate it's resizable
+        container.style.resize = 'both';
+        container.style.overflow = 'auto';
+        container.style.border = '2px dashed #007bff';
+        container.style.position = 'relative';
+        
+        // Add a resize handle indicator
+        const resizeHandle = document.createElement('div');
+        resizeHandle.style.position = 'absolute';
+        resizeHandle.style.bottom = '0';
+        resizeHandle.style.right = '0';
+        resizeHandle.style.width = '20px';
+        resizeHandle.style.height = '20px';
+        resizeHandle.style.cursor = 'nwse-resize';
+        resizeHandle.style.background = 'linear-gradient(135deg, transparent 50%, #007bff 50%)';
+        container.appendChild(resizeHandle);
+        
+        // Add a label to show current dimensions
+        const dimensionsLabel = document.createElement('div');
+        dimensionsLabel.style.position = 'absolute';
+        dimensionsLabel.style.top = '0';
+        dimensionsLabel.style.right = '0';
+        dimensionsLabel.style.background = 'rgba(0,0,0,0.7)';
+        dimensionsLabel.style.color = 'white';
+        dimensionsLabel.style.padding = '2px 5px';
+        dimensionsLabel.style.fontSize = '12px';
+        dimensionsLabel.style.borderRadius = '0 0 0 5px';
+        container.appendChild(dimensionsLabel);
+        
+        // Update dimensions label
+        const updateDimensions = () => {
+            dimensionsLabel.textContent = `${container.clientWidth}×${container.clientHeight}`;
+        };
+        
+        // Initial dimensions
+        updateDimensions();
+        
+        // Listen for resize events
+        const resizeObserver = new ResizeObserver(() => {
+            updateDimensions();
+            // This will trigger recalculation of visible items
+            container.dispatchEvent(new Event('scroll'));
+        });
+        
+        resizeObserver.observe(container);
+        
+        console.log("Container is now resizable");
+    }
 
     // disable
     enabled = true;
@@ -15,49 +71,36 @@ class TextModel {
             case 0:
                 // Short item
                 return { 
-                    text: `Item ${i}`,
-                    index: i,
-                    size: 'small'
+                    text: `Item ${i}`
                 };
             case 1: 
                 // Medium item with longer text
                 return { 
-                    text: `Item ${i} with some additional text that will make this item taller`,
-                    index: i,
-                    size: 'medium'
+                    text: `Item ${i} with some additional text that will make this item taller`
                 };
             case 2:
                 // Large item with much longer text
                 return { 
-                    text: `Item ${i} with a lot of content. This is a much longer description that will wrap to multiple lines and create a significantly taller item. We're adding even more text to ensure this item takes up more vertical space when rendered.`,
-                    index: i,
-                    size: 'large'
+                    text: `Item ${i} with a lot of content. This is a much longer description that will wrap to multiple lines and create a significantly taller item. We're adding even more text to ensure this item takes up more vertical space when rendered.`
                 };
             case 3:
                 // Item with image placeholder (will be taller)
                 return { 
                     text: `Item ${i} with image`,
-                    hasImage: true,
-                    index: i,
-                    size: 'large'
                 };
             case 4:
                 // Extra large item with very long content
                 return { 
-                    text: `Item ${i} with extremely long content. This item will have multiple paragraphs of text to make it very tall.\n\nThis is a second paragraph for this item. We're adding a lot of text to ensure this item is much taller than the others.\n\nAnd here's even a third paragraph with more content to make this item take up significant vertical space when rendered.`,
-                    index: i,
-                    isImportant: true,
-                    size: 'xlarge'
+                    text: `Item ${i} with extremely long content. This item will have multiple paragraphs of text to make it very tall.\n\nThis is a second paragraph for this item. We're adding a lot of text to ensure this item is much taller than the others.\n\nAnd here's even a third paragraph with more content to make this item take up significant vertical space when rendered.`
                 };
             default:
                 // Add default case to ensure all paths return a value
                 return { 
-                    text: `Item ${i}`,
-                    index: i,
-                    size: 'small'
+                    text: `Item ${i}`
                 };
         }
     }));
+
     _selectedArrayIndex: number | undefined = 0;
  
     get selectedArrayIndex() {
@@ -67,7 +110,6 @@ class TextModel {
     set selectedArrayIndex(val: number | undefined) {
         this._selectedArrayIndex = val;
     }
-
 }
 
 const textModel = toTracked(new TextModel());
@@ -75,26 +117,63 @@ const textModel = toTracked(new TextModel());
 const modelControl = document.getElementById('model') as HtmlControl
 modelControl.model = textModel;
 
-await sleepAsync(3000);
+textModel.setupResizableContainer();
+
+await sleepAsync(2000);
 textModel.array.splice(3, 1); // Remove the item at index 3
 console.log("Removed item at position 3");
 await sleepAsync(1000);
 textModel.array[1] = { 
     text: "Item 1 (modified)",
-    index: 1,
-    size: 'small'
 };
 
-await sleepAsync(3000);
+await sleepAsync(2000);
 textModel.selectedArrayIndex = 7;
 
 await sleepAsync(1000);
 textModel.array.splice(2, 0, 
-  { text: "New Item 1", index: 9, size: 'small' },
-  { text: "New Item 2", index: 9, size: 'small' },
-  { text: "New Item 3", index: 9, size: 'small' }
+  { text: "New Item 1" },
+  { text: "New Item 2" },
+  { text: "New Item 3" }
 );
 
 await sleepAsync(1000);
 textModel.array.splice(5, 1);
-textModel.array.push({ text: "New Item End", index: 9, size: 'small' });
+textModel.array.push({ text: "New Item End" });
+
+await sleepAsync(1000);
+textModel.array[4] = {
+  text: "Item test",
+};
+console.log("Modified size of element at index 4");
+
+await sleepAsync(1000);
+const itemsControl = document.querySelector('items-control');
+if (itemsControl) {
+  // Access the items property using type assertion
+  const items = (itemsControl as any).items;
+  
+  if (items) {
+    // Find all model-control elements in the document
+    const modelControls = document.querySelectorAll('model-control');
+    
+    // Find the element that corresponds to the 5th item in the array
+    let fifthElement = null;
+    for (const element of modelControls) {
+      const model = (element as any).model;
+      if (model && model === items[4]) {
+        fifthElement = element;
+        break;
+      }
+    }
+    
+    if (fifthElement) {
+      (fifthElement as HTMLElement).style.height = '200px';
+      console.log("Directly modified CSS height of element at index 4");
+    } else {
+      console.log("Could not find the element for item at index 4");
+    }
+  } else {
+    console.log("Could not access items property");
+  }
+}
