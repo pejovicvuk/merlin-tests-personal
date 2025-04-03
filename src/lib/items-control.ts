@@ -28,6 +28,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
     #itemsPerViewport: number = 0;
     #currentPaddingTop: number = 0;
     #currentPaddingBottom: number = 0;
+    #elementPool: BindableControl[] = [];
 
     constructor() {
         super();
@@ -230,13 +231,6 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
             virtualContainer.style.flexDirection = 'column';
             div.appendChild(virtualContainer);
 
-            // Calculate initial viewport size
-            this.#itemsPerViewport = Math.ceil(div.clientHeight / 50); // Use a default height estimate initially
-
-            // Calculate initial render count based on 3 viewports
-            this.#initialRenderCount = Math.min(items.length, this.#itemsPerViewport * 3);
-
-            // Set the initial rendered range
             this.#lastRenderedIndex = this.#initialRenderCount - 1;
 
             this.#observer = new IntersectionObserver((entries) => {           
@@ -315,6 +309,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                                     if (slot) slot.remove();
                                     this.#itemToElementMap.delete(lastItem);
                                     lastElement.remove();
+                                    this.#elementPool.push(lastElement);
                                     this.#lastRenderedIndex--;
                                 }
                             }
@@ -374,6 +369,8 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                                     this.#itemToElementMap.delete(firstItem);
                                     firstElement.remove();
                                     this.#firstRenderedIndex++;
+                                    
+                                    this.#elementPool.push(firstElement);
                                 }
                             }
                         });
@@ -446,10 +443,32 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         const virtualContainer = this.itemsContainer.firstElementChild as HTMLElement;
         const item = items[index];
         
-        const ctl = this.createItemContainer();
+        // Try to get an element from the pool
+        let ctl: BindableControl;
+        if (this.#elementPool.length > 0) {
+            ctl = this.#elementPool.pop()!;
+            
+            // Clear the element and prepare it for reuse
+            ctl.innerHTML = '';
+            
+            // Reset any custom styles that might have been applied
+            (ctl as HTMLElement).style.height = '';
+            (ctl as HTMLElement).style.minHeight = '';
+            (ctl as HTMLElement).style.maxHeight = '';
+        } else {
+            // Create a new element if pool is empty
+            ctl = this.createItemContainer();
+        }
+        
+        // Set up the recycled or new element
         const template = this.#getItemTemplateContent(item);
         ctl.append(template.cloneNode(true));
         ctl.model = item;
+        
+        // Apply any custom properties from the model
+        if (item.customHeight) {
+            (ctl as HTMLElement).style.height = item.customHeight;
+        }
         
         const slotName = 'i-' + this.#slotCount++;
         ctl.slot = slotName;
@@ -670,6 +689,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
     };
 
     override onDisconnectedFromDom(): void {
+        this.#elementPool = [];
         this.#recentlyDeleted = undefined;
         this.#itemToElementMap.clear();
         super.onDisconnectedFromDom();
