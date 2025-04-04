@@ -443,29 +443,23 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         const virtualContainer = this.itemsContainer.firstElementChild as HTMLElement;
         const item = items[index];
         
-        // Try to get an element from the pool
         let ctl: BindableControl;
         if (this.#elementPool.length > 0) {
             ctl = this.#elementPool.pop()!;
             
-            // Clear the element and prepare it for reuse
             ctl.innerHTML = '';
             
-            // Reset any custom styles that might have been applied
             (ctl as HTMLElement).style.height = '';
             (ctl as HTMLElement).style.minHeight = '';
             (ctl as HTMLElement).style.maxHeight = '';
         } else {
-            // Create a new element if pool is empty
             ctl = this.createItemContainer();
         }
         
-        // Set up the recycled or new element
         const template = this.#getItemTemplateContent(item);
         ctl.append(template.cloneNode(true));
         ctl.model = item;
         
-        // Apply any custom properties from the model
         if (item.customHeight) {
             (ctl as HTMLElement).style.height = item.customHeight;
         }
@@ -495,7 +489,6 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         const container = this.itemsContainer;
         const virtualContainer = container.firstElementChild as HTMLElement;
         
-        // Clear all current items
         for (const [_, element] of this.#itemToElementMap.entries()) {
             const slotName = element.slot;
             const slot = virtualContainer.querySelector(`slot[name="${slotName}"]`);
@@ -506,30 +499,24 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         
         const scrollTop = container.scrollTop;
         
-        // Estimate which item should be in the middle of the viewport
         const estimatedIndex = Math.floor(scrollTop / this.#averageItemHeight);
         const safeIndex = Math.max(0, Math.min(estimatedIndex, items.length - 1));
 
-        // Calculate how many items to render (3 viewports worth)
         const totalItemsToRender = this.#itemsPerViewport * 3;
         const halfCount = Math.floor(totalItemsToRender / 2);
         
-        // Calculate start and end indices, ensuring we don't go out of bounds
         const startIndex = Math.max(0, safeIndex - halfCount);
         const endIndex = Math.min(items.length - 1, startIndex + totalItemsToRender - 1);
         
-        // Adjust padding top based on items above
         const paddingTop = startIndex * this.#averageItemHeight;
         virtualContainer.style.paddingTop = `${paddingTop}px`;
         this.#currentPaddingTop = paddingTop;
         
-        // Adjust padding bottom based on items below
         const itemsBelow = items.length - endIndex - 1;
         const paddingBottom = itemsBelow * this.#averageItemHeight;
         virtualContainer.style.paddingBottom = `${paddingBottom}px`;
         this.#currentPaddingBottom = paddingBottom;
         
-        // Render the items
         for (let i = startIndex; i <= endIndex; i++) {
             const item = items[i];
             const ctl = this.#renderItemAtIndex(i);
