@@ -43,13 +43,11 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
     }
 
     get #estimatedTotalHeight(): number {
-        const items = this.items as any[];
-        return this.#averageItemHeight * items.length;
+        return this.#averageItemHeight * this.#itemsArray.length;
     }
     get #totalRenderedHeight(): number {
-        const items = this.items as any[];
-        const lastRenderedItem = items[this.#lastRenderedIndex];
-        const firstRenderedItem = items[this.#firstRenderedIndex];
+        const lastRenderedItem = this.#itemsArray[this.#lastRenderedIndex];
+        const firstRenderedItem = this.#itemsArray[this.#firstRenderedIndex];
         const lastElement = this.#itemToElementMap.get(lastRenderedItem);
         const firstElement = this.#itemToElementMap.get(firstRenderedItem);
         if (!lastElement || !firstElement) return 0;
@@ -60,7 +58,13 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         return lastRect.bottom - firstRect.top;
     }
     get #averageItemHeight(): number {
-        return this.#totalRenderedHeight / this.#initialRenderCount;
+        return this.#totalRenderedHeight / this.#renderedItemCount;
+    }
+    get #renderedItemCount(): number {
+        return this.#lastRenderedIndex - this.#firstRenderedIndex + 1;
+    }
+    get #itemsArray(): any[] {
+        return this.items as any[] || [];
     }
 
     constructor() {
@@ -226,13 +230,11 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
     }
 
     onItemsChangedVirtualized() {
-        let items: any[] | undefined;
-        items = this.items as any[];
 
         const currentItems = Array.from(this.#itemToElementMap.keys()).length > 0 ? 
             this.items : undefined;
         
-        if (items === currentItems) return;
+        if (this.#itemsArray === currentItems) return;
         
         // remove listener from previous array
         if (Array.isArray(currentItems)) {
@@ -251,9 +253,9 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         div.style.height = this.getAttribute('height') || '60vh'; //keep while testing
         
 
-        if (items !== undefined) {
-            if (Array.isArray(items)) {
-                const tracker = getTracker(items);
+        if (this.#itemsArray !== currentItems) {
+            if (Array.isArray(this.#itemsArray)) {
+                const tracker = getTracker(this.#itemsArray);
                 if (tracker !== undefined) {
                     tracker[addArrayListener](this.#onArrayChangedVirtualized);
                 }
@@ -267,8 +269,8 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
             this.#lastRenderedIndex = this.#initialRenderCount - 1;
 
             this.#observer = new IntersectionObserver((entries) => {           
-                const firstElement = this.#itemToElementMap.get(items[this.#firstRenderedIndex]);
-                const lastElement = this.#itemToElementMap.get(items[this.#lastRenderedIndex]);
+                const firstElement = this.#itemToElementMap.get(this.#itemsArray[this.#firstRenderedIndex]);
+                const lastElement = this.#itemToElementMap.get(this.#itemsArray[this.#lastRenderedIndex]);
                 const virtualContainer = this.itemsContainer.firstElementChild as HTMLElement;
 
                 let firstItemVisible: boolean = false;
@@ -291,7 +293,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                     
                     for (let i = 1; i <= itemsToRenderAbove; i++) {
                         const newIndex = this.#firstRenderedIndex - i;
-                        const newItem = items[newIndex];
+                        const newItem = this.#itemsArray[newIndex];
                         
                         if (this.#itemToElementMap.has(newItem)) continue;
                         
@@ -324,7 +326,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                         
                         requestAnimationFrame(() => {
                             for (let i = 0; i < itemsToRemove; i++) {
-                                const lastItem = items[this.#lastRenderedIndex];
+                                const lastItem = this.#itemsArray[this.#lastRenderedIndex];
                                 const lastElement = this.#itemToElementMap.get(lastItem);
                                 
                                 if (lastElement) {
@@ -362,12 +364,12 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                     }
                 }
                 
-                if (lastItemVisible && this.#lastRenderedIndex < items.length - 1) {
-                    const itemsToRenderBelow = Math.min(this.#itemsPerViewport, items.length - 1 - this.#lastRenderedIndex);
+                if (lastItemVisible && this.#lastRenderedIndex < this.#itemsArray.length - 1) {
+                    const itemsToRenderBelow = Math.min(this.#itemsPerViewport, this.#itemsArray.length - 1 - this.#lastRenderedIndex);
                     
                     for (let i = 1; i <= itemsToRenderBelow; i++) {
                         const newIndex = this.#lastRenderedIndex + i;
-                        const newItem = items[newIndex];
+                        const newItem = this.#itemsArray[newIndex];
                         
                         if (this.#itemToElementMap.has(newItem)) continue;
                         
@@ -396,7 +398,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                         
                         requestAnimationFrame(() => {
                             for (let i = 0; i < itemsToRemove; i++) {
-                                const firstItem = items[this.#firstRenderedIndex];
+                                const firstItem = this.#itemsArray[this.#firstRenderedIndex];
                                 const firstElement = this.#itemToElementMap.get(firstItem);
                                 
                                 if (firstElement) {
@@ -438,7 +440,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                     this.#handleEmptyViewport();
                 }
 
-                if (this.#lastRenderedIndex === items.length - 1) {
+                if (this.#lastRenderedIndex === this.#itemsArray.length - 1) {
                     virtualContainer.style.paddingBottom = '0px';
                 }
 
@@ -451,8 +453,8 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                 threshold: 0.0
             });
             
-            for (let i = 0; i < this.#initialRenderCount && i < items.length; i++) {
-                const item = items[i];
+            for (let i = 0; i < this.#initialRenderCount && i < this.#itemsArray.length; i++) {
+                const item = this.#itemsArray[i];
                 
                 const ctl = this.createItemContainer();
                 const template = this.#getItemTemplateContent(item);
@@ -477,13 +479,12 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         }
     }
     #renderItemAtIndex(index: number, insertAtBeginning: boolean = false): BindableControl | null {
-        const items = this.items as any[];
-        if (index < 0 || index >= items.length || this.#itemToElementMap.has(items[index])) {
+        if (index < 0 || index >= this.#itemsArray.length || this.#itemToElementMap.has(this.#itemsArray[index])) {
             return null;
         }
         
         const virtualContainer = this.itemsContainer.firstElementChild as HTMLElement;
-        const item = items[index];
+        const item = this.#itemsArray[index];
         
         let ctl: BindableControl;
         if (this.#elementPool.length > 0) {
@@ -531,7 +532,6 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
     }
     #handleEmptyViewport(): void {
         console.log('handleEmptyViewport() called');
-        const items = this.items as any[];
         
         const container = this.itemsContainer;
         const virtualContainer = container.firstElementChild as HTMLElement;
@@ -546,25 +546,26 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
 
         
         const scrollTop = container.scrollTop;
+        console.log(scrollTop);
         
         const estimatedIndex = Math.floor(scrollTop / this.#averageItemHeight);
-        const safeIndex = Math.max(0, Math.min(estimatedIndex, items.length - 1));
+        const safeIndex = Math.max(0, Math.min(estimatedIndex, this.#itemsArray.length - 1));
 
         const totalItemsToRender = this.#itemsPerViewport * 3;
         const halfCount = Math.floor(totalItemsToRender / 2);
         
         const startIndex = Math.max(0, safeIndex - halfCount);
-        const endIndex = Math.min(items.length - 1, startIndex + totalItemsToRender - 1);
+        const endIndex = Math.min(this.#itemsArray.length - 1, startIndex + totalItemsToRender - 1);
         
         const paddingTop = startIndex * this.#averageItemHeight;
         virtualContainer.style.paddingTop = `${paddingTop}px`;
         
-        const itemsBelow = items.length - endIndex - 1;
+        const itemsBelow = this.#itemsArray.length - endIndex - 1;
         const paddingBottom = itemsBelow * this.#averageItemHeight;
         virtualContainer.style.paddingBottom = `${paddingBottom}px`;
         
         for (let i = startIndex; i <= endIndex; i++) {
-            const item = items[i];
+            const item = this.#itemsArray[i];
             const ctl = this.#renderItemAtIndex(i);
             
             if (ctl) {
@@ -898,7 +899,6 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
     };
 
     #updateVirtualPadding() {
-        const items = this.items as any[];
         
         const virtualContainer = this.itemsContainer.firstElementChild as HTMLElement;
         if (!virtualContainer) return;
@@ -906,7 +906,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         const paddingTop = this.#firstRenderedIndex * this.#averageItemHeight;
         virtualContainer.style.paddingTop = `${paddingTop}px`;
         
-        const itemsBelow = items.length - this.#lastRenderedIndex - 1;
+        const itemsBelow = this.#itemsArray.length - this.#lastRenderedIndex - 1;
         const paddingBottom = itemsBelow * this.#averageItemHeight;
         virtualContainer.style.paddingBottom = `${paddingBottom}px`;
     }
