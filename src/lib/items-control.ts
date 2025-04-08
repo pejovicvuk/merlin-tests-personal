@@ -25,6 +25,9 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
     #initialRenderCount: number = 100;
     #elementPool: BindableControl[] = [];
     #itemStyleMap = new Map<any, Record<string, string>>();
+    #isScrolling: boolean = false;
+    #scrollTimeout: number | null = null;
+    #pendingEmptyViewportCheck: boolean = false;
 
 
     //getters for dynamically caluclating average values whenever they are accessed
@@ -79,6 +82,8 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
 
         const itemContainerTemplateSlot = this.#itemContainerTemplateSlot;
         itemContainerTemplateSlot.addEventListener('slotchange', ItemsControl.#onSlotChangeShared);
+
+        this.#initScrollHandlers();
     }
 
     static #onSlotChangeShared(this: HTMLSlotElement, ev: Event) {
@@ -446,7 +451,11 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
                 //handling the case where the viewport becomes empty
                 if (this.#isViewportEmpty()) {
                     console.log('no items are visible');
-                    this.#handleEmptyViewport();
+                    if (this.#isScrolling) {
+                        this.#pendingEmptyViewportCheck = true;
+                    } else {
+                        this.#handleEmptyViewport();
+                    }
                 }
 
                 //fixing the small padding innacuracies when the last item is rendered
@@ -954,5 +963,30 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
     }
     getItemStyles(item: any): Record<string, string> | undefined {
         return this.#itemStyleMap.get(item);
+    }
+
+    #initScrollHandlers(): void {
+        const container = this.itemsContainer;
+        
+        container.addEventListener('scroll', () => {
+            // Clear any existing timeout
+            if (this.#scrollTimeout !== null) {
+                window.clearTimeout(this.#scrollTimeout);
+            }
+            
+            // Mark as scrolling
+            this.#isScrolling = true;
+            
+            this.#scrollTimeout = window.setTimeout(() => {
+                this.#isScrolling = false;
+                this.#scrollTimeout = null;
+                
+                // If we had a pending empty viewport check, do it now
+                if (this.#pendingEmptyViewportCheck) {
+                    this.#pendingEmptyViewportCheck = false;
+                    this.#handleEmptyViewport();
+                }
+            }, 50); // Adjust timeout as needed
+        });
     }
 }

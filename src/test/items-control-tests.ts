@@ -63,7 +63,7 @@ class TextModel {
     // disable
     enabled = true;
 
-    array = toTracked(Array.from({ length: 10000 }, (_, i) => {
+    array = toTracked(Array.from({ length: 100000 }, (_, i) => {
         // Create items with varying content to produce different heights
         const type = i % 5; // Create 5 different types of items
         
