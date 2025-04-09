@@ -3,6 +3,7 @@ import { addArrayListener, getTracker, removeArrayListener } from "./dependency-
 import { findTemplateById, getTypeName } from "./dom-utilities.js";
 import { HtmlControl, HtmlControlBindableProperty } from "./html-control.js";
 import { enqueTask } from "./task-queue.js";
+import { executeQueuedTasks } from "./task-queue.js";
 
 const standardTemplate = document.createElement('template');
 standardTemplate.innerHTML = '<text-block text="this"></text-block>';
@@ -24,7 +25,6 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
     #firstRenderedIndex: number = 0;
     #initialRenderCount: number = 100;
     #elementPool: BindableControl[] = [];
-    #itemStyleMap = new Map<any, Record<string, string>>();
     #isScrolling: boolean = false;
     #scrollTimeout: number | null = null;
     #pendingEmptyViewportCheck: boolean = false;
@@ -38,13 +38,13 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
     get #currentPaddingTop(): number {
         const virtualContainer = this.itemsContainer.firstElementChild as HTMLElement;
         if (!virtualContainer) return 0;
-        return Math.floor(parseFloat(virtualContainer.style.paddingTop || '0'));
+        return Math.floor(parseFloat(virtualContainer.style.paddingTop ?? '0'));
     }
 
     get #currentPaddingBottom(): number {
         const virtualContainer = this.itemsContainer.firstElementChild as HTMLElement;
         if (!virtualContainer) return 0;
-        return Math.floor(parseFloat(virtualContainer.style.paddingBottom || '0'));
+        return Math.floor(parseFloat(virtualContainer.style.paddingBottom ?? '0'));
     }
 
     get #estimatedTotalHeight(): number {
@@ -69,7 +69,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         return this.#lastRenderedIndex - this.#firstRenderedIndex + 1;
     }
     get #itemsArray(): any[] {
-        return this.items as any[] || [];
+        return this.items as any[] ?? [];
     }
 
     constructor() {
@@ -238,7 +238,7 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
 
     onItemsChangedVirtualized() {
 
-        const currentItems = Array.from(this.#itemToElementMap.keys()).length > 0 ? 
+        const currentItems = this.#itemToElementMap.size > 0 ? 
             this.items : undefined;
         
         if (this.#itemsArray === currentItems) return;
@@ -260,243 +260,208 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         div.style.height = this.getAttribute('height') || '60vh'; //keep while testing
         
 
-        if (this.#itemsArray !== currentItems) {
-            if (Array.isArray(this.#itemsArray)) {
-                const tracker = getTracker(this.#itemsArray);
-                if (tracker !== undefined) {
-                    tracker[addArrayListener](this.#onArrayChangedVirtualized);
+        if (Array.isArray(this.#itemsArray)) {
+            const tracker = getTracker(this.#itemsArray);
+            if (tracker !== undefined) {
+                tracker[addArrayListener](this.#onArrayChangedVirtualized);
+            }
+        }
+        
+        const virtualContainer = document.createElement('div');
+        virtualContainer.style.display = 'flex';
+        virtualContainer.style.flexDirection = 'column';
+        div.appendChild(virtualContainer);
+        this.#lastRenderedIndex = this.#initialRenderCount - 1;
+        this.#observer = new IntersectionObserver((entries) => {        
+            console.log('padding bottom:', entries);   
+            const firstElement = this.#itemToElementMap.get(this.#itemsArray[this.#firstRenderedIndex]);
+            const lastElement = this.#itemToElementMap.get(this.#itemsArray[this.#lastRenderedIndex]);
+            const virtualContainer = this.itemsContainer.firstElementChild as HTMLElement;
+            let firstItemVisible: boolean = false;
+            let lastItemVisible: boolean = false;
+            for (const entry of entries) {
+                if (entry.target === firstElement) {
+                    firstItemVisible = entry.isIntersecting;
+                }
+                if (entry.target === lastElement) {
+                    lastItemVisible = entry.isIntersecting;
                 }
             }
             
-            const virtualContainer = document.createElement('div');
-            virtualContainer.style.display = 'flex';
-            virtualContainer.style.flexDirection = 'column';
-            div.appendChild(virtualContainer);
-
-            this.#lastRenderedIndex = this.#initialRenderCount - 1;
-
-            this.#observer = new IntersectionObserver((entries) => {           
-                const firstElement = this.#itemToElementMap.get(this.#itemsArray[this.#firstRenderedIndex]);
-                const lastElement = this.#itemToElementMap.get(this.#itemsArray[this.#lastRenderedIndex]);
-                const virtualContainer = this.itemsContainer.firstElementChild as HTMLElement;
-
-                let firstItemVisible: boolean = false;
-                let lastItemVisible: boolean = false;
-
-                for (const entry of entries) {
-                    if (entry.target === firstElement) {
-                        firstItemVisible = entry.isIntersecting;
-                    }
-                    if (entry.target === lastElement) {
-                        lastItemVisible = entry.isIntersecting;
-                    }
-                }
+            // Handle top edge - add items above and remove from bottom
+            if (firstItemVisible && this.#firstRenderedIndex > 0) {
+                const itemsToRenderAbove = Math.min(this.#itemsPerViewport, this.#firstRenderedIndex);
                 
-                // Handle top edge - add items above and remove from bottom
-                if (firstItemVisible && this.#firstRenderedIndex > 0) {
-                    const itemsToRenderAbove = Math.min(this.#itemsPerViewport, this.#firstRenderedIndex);
-                    
-                    const scrollTop = this.itemsContainer.scrollTop;
-                    const containerHeight = this.itemsContainer.scrollHeight;
-                    
-                    // Add items above
-                    for (let i = 1; i <= itemsToRenderAbove; i++) {
-                        const newIndex = this.#firstRenderedIndex - i;
-                        const newItem = this.#itemsArray[newIndex];
-                        
-                        if (this.#itemToElementMap.has(newItem)) continue;
-                        
-                        const ctl = this.#renderItemAtIndex(newIndex, true);
-                        if (ctl) {
-                            this.#itemToElementMap.set(newItem, ctl);
-                            
-                            // update padding
-                            requestAnimationFrame(() => {
-                                const rect = ctl.getBoundingClientRect();
-                                if (rect.height > 0) {
-                                    const newPadding = Math.max(0, this.#currentPaddingTop - rect.height);
-                                    virtualContainer.style.paddingTop = `${newPadding}px`;
-                                    
-                                    //minimize scroll jumping when adding items above
-                                    const heightDiff = this.itemsContainer.scrollHeight - containerHeight;
-                                    if (heightDiff > 0) {
-                                        this.itemsContainer.scrollTop = scrollTop + heightDiff;
-                                    }
-                                }
-                            });
-                        }
-                    }
-                    
-                    this.#firstRenderedIndex -= itemsToRenderAbove;
-                    
-                    const totalItemsToKeep = this.#itemsPerViewport * 3;
-                    const currentRenderedItems = this.#lastRenderedIndex - this.#firstRenderedIndex + 1;
-                    
-                    // Remove items from bottom
-                    if (currentRenderedItems > totalItemsToKeep) {
-                        const itemsToRemove = Math.min(itemsToRenderAbove, currentRenderedItems - totalItemsToKeep);
-                        
-                        for (let i = 0; i < itemsToRemove; i++) {
-                            const lastItem = this.#itemsArray[this.#lastRenderedIndex];
-                            const lastElement = this.#itemToElementMap.get(lastItem);
-                            
-                            if (lastElement) {
-                                const rect = lastElement.getBoundingClientRect();
-                                
-                                const slotName = lastElement.slot;
-                                const slot = virtualContainer.querySelector(`slot[name="${slotName}"]`);
-                                
-                                // update padding
-                                const newPadding = Math.max(0, this.#currentPaddingBottom + rect.height);
-                                virtualContainer.style.paddingBottom = `${newPadding}px`;
-                                
-                                // style saving
-                                const elementStyles: Record<string, string> = {};
-                                const style = (lastElement as HTMLElement).style;
-                                for (const prop of ['height', 'minHeight', 'maxHeight', 'color', 'backgroundColor']) {
-                                    const value = style[prop as any];
-                                    if (value) {
-                                        elementStyles[prop] = value;
-                                    }
-                                }
-                                
-                                if (Object.keys(elementStyles).length > 0) {
-                                    this.#itemStyleMap.set(lastItem, elementStyles);
-                                }
-                                
-                                if (slot) slot.remove();
-                                this.#itemToElementMap.delete(lastItem);
-                                lastElement.remove();
-                                this.#elementPool.push(lastElement);
-                                this.#lastRenderedIndex--;
-                            }
-                        }
-                    }
-                }
+                const scrollTop = this.itemsContainer.scrollTop;
+                const containerHeight = this.itemsContainer.scrollHeight;
                 
-                // Handle bottom edge - add items below and remove from top
-                if (lastItemVisible && this.#lastRenderedIndex < this.#itemsArray.length - 1) {
-                    const itemsToRenderBelow = Math.min(this.#itemsPerViewport, this.#itemsArray.length - 1 - this.#lastRenderedIndex);
+                // Add items above
+                for (let i = 1; i <= itemsToRenderAbove; i++) {
+                    const newIndex = this.#firstRenderedIndex - i;
+                    const newItem = this.#itemsArray[newIndex];
                     
-                    // Add items below
-                    for (let i = 1; i <= itemsToRenderBelow; i++) {
-                        const newIndex = this.#lastRenderedIndex + i;
-                        const newItem = this.#itemsArray[newIndex];
-                        
-                        if (this.#itemToElementMap.has(newItem)) continue;
-                        
-                        const ctl = this.#renderItemAtIndex(newIndex);
-                        
-                        if (ctl) {
-                            this.#itemToElementMap.set(newItem, ctl);
-                            
-                            // update padding
-                            requestAnimationFrame(() => {
-                                const rect = ctl.getBoundingClientRect();
-                                if (rect.height > 0) {
-                                    const newPadding = Math.max(0, this.#currentPaddingBottom - rect.height);
-                                    virtualContainer.style.paddingBottom = `${newPadding}px`;
-                                }
-                            });
-                        }
-                    }
+                    if (this.#itemToElementMap.has(newItem)) continue;
                     
-                    this.#lastRenderedIndex += itemsToRenderBelow;
-                    
-                    const totalItemsToKeep = this.#itemsPerViewport * 3;
-                    const currentRenderedItems = this.#lastRenderedIndex - this.#firstRenderedIndex + 1;
-                    
-                    // Remove items from top
-                    if (currentRenderedItems > totalItemsToKeep) {
-                        const itemsToRemove = Math.min(itemsToRenderBelow, currentRenderedItems - totalItemsToKeep);
+                    const ctl = this.#renderItemAtIndex(newIndex, true);
+                    if (ctl) {
+                        this.#itemToElementMap.set(newItem, ctl);
                         
-                        for (let i = 0; i < itemsToRemove; i++) {
-                            const firstItem = this.#itemsArray[this.#firstRenderedIndex];
-                            const firstElement = this.#itemToElementMap.get(firstItem);
-                            
-                            if (firstElement) {
-                                const rect = firstElement.getBoundingClientRect();
-                                
-                                const slotName = firstElement.slot;
-                                const slot = virtualContainer.querySelector(`slot[name="${slotName}"]`);
-                                
-                                // update padding
-                                const newPadding = Math.max(0, this.#currentPaddingTop + rect.height);
+                        // update padding
+                        requestAnimationFrame(() => {
+                            const rect = ctl.getBoundingClientRect();
+                            if (rect.height > 0) {
+                                const newPadding = Math.max(0, this.#currentPaddingTop - rect.height);
                                 virtualContainer.style.paddingTop = `${newPadding}px`;
                                 
-                                // style saving
-                                const elementStyles: Record<string, string> = {};
-                                const style = (firstElement as HTMLElement).style;
-                                
-                                for (const prop of ['height', 'minHeight', 'maxHeight', 'color', 'backgroundColor']) {
-                                    const value = style[prop as any];
-                                    if (value) {
-                                        elementStyles[prop] = value;
-                                    }
+                                //minimize scroll jumping when adding items above
+                                const heightDiff = this.itemsContainer.scrollHeight - containerHeight;
+                                if (heightDiff > 0) {
+                                    this.itemsContainer.scrollTop = scrollTop + heightDiff;
                                 }
-                                if (Object.keys(elementStyles).length > 0) {
-                                    this.#itemStyleMap.set(firstItem, elementStyles);
-                                }
-                                
-                                if (slot) slot.remove();
-                                this.#itemToElementMap.delete(firstItem);
-                                firstElement.remove();
-                                this.#firstRenderedIndex++;
-                                
-                                this.#elementPool.push(firstElement);
                             }
+                        });
+                    }
+                }
+                
+                this.#firstRenderedIndex -= itemsToRenderAbove;
+                
+                const totalItemsToKeep = this.#itemsPerViewport * 3;
+                const currentRenderedItems = this.#lastRenderedIndex - this.#firstRenderedIndex + 1;
+                
+                // Remove items from bottom
+                if (currentRenderedItems > totalItemsToKeep) {
+                    const itemsToRemove = Math.min(itemsToRenderAbove, currentRenderedItems - totalItemsToKeep);
+                    
+                    for (let i = 0; i < itemsToRemove; i++) {
+                        const lastItem = this.#itemsArray[this.#lastRenderedIndex];
+                        const lastElement = this.#itemToElementMap.get(lastItem);
+                        
+                        if (lastElement) {
+                            const rect = lastElement.getBoundingClientRect();
+                            
+                            const slotName = lastElement.slot;
+                            const slot = virtualContainer.querySelector(`slot[name="${slotName}"]`);
+                            
+                            // update padding
+                            const newPadding = Math.max(0, this.#currentPaddingBottom + rect.height);
+                            virtualContainer.style.paddingBottom = `${newPadding}px`;
+                            
+                            if (slot) slot.remove();
+                            this.#itemToElementMap.delete(lastItem);
+                            lastElement.remove();
+                            this.#elementPool.push(lastElement);
+                            this.#lastRenderedIndex--;
                         }
                     }
                 }
-                //handling the case where the viewport becomes empty
-                if (this.#isViewportEmpty()) {
-                    console.log('no items are visible');
-                    if (this.#isScrolling) {
-                        this.#pendingEmptyViewportCheck = true;
-                    } else {
-                        this.#handleEmptyViewport();
+            }
+            
+            // Handle bottom edge - add items below and remove from top
+            if (lastItemVisible && this.#lastRenderedIndex < this.#itemsArray.length - 1) {
+                const itemsToRenderBelow = Math.min(this.#itemsPerViewport, this.#itemsArray.length - 1 - this.#lastRenderedIndex);
+                
+                // Add items below
+                for (let i = 1; i <= itemsToRenderBelow; i++) {
+                    const newIndex = this.#lastRenderedIndex + i;
+                    const newItem = this.#itemsArray[newIndex];
+                    
+                    if (this.#itemToElementMap.has(newItem)) continue;
+                    
+                    const ctl = this.#renderItemAtIndex(newIndex);
+                    
+                    if (ctl) {
+                        this.#itemToElementMap.set(newItem, ctl);
+                        
+                        // update padding
+                        requestAnimationFrame(() => {
+                            const rect = ctl.getBoundingClientRect();
+                            if (rect.height > 0) {
+                                const newPadding = Math.max(0, this.#currentPaddingBottom - rect.height);
+                                virtualContainer.style.paddingBottom = `${newPadding}px`;
+                            }
+                        });
                     }
                 }
-
-                //fixing the small padding innacuracies when the last item is rendered
-                if (this.#lastRenderedIndex === this.#itemsArray.length - 1) {
-                    virtualContainer.style.paddingBottom = '0px';
+                
+                this.#lastRenderedIndex += itemsToRenderBelow;
+                
+                const totalItemsToKeep = this.#itemsPerViewport * 3;
+                const currentRenderedItems = this.#lastRenderedIndex - this.#firstRenderedIndex + 1;
+                
+                // Remove items from top
+                if (currentRenderedItems > totalItemsToKeep) {
+                    const itemsToRemove = Math.min(itemsToRenderBelow, currentRenderedItems - totalItemsToKeep);
+                    
+                    for (let i = 0; i < itemsToRemove; i++) {
+                        const firstItem = this.#itemsArray[this.#firstRenderedIndex];
+                        const firstElement = this.#itemToElementMap.get(firstItem);
+                        
+                        if (firstElement) {
+                            const rect = firstElement.getBoundingClientRect();
+                            
+                            const slotName = firstElement.slot;
+                            const slot = virtualContainer.querySelector(`slot[name="${slotName}"]`);
+                            
+                            // update padding
+                            const newPadding = Math.max(0, this.#currentPaddingTop + rect.height);
+                            virtualContainer.style.paddingTop = `${newPadding}px`;
+                            
+                            if (slot) slot.remove();
+                            this.#itemToElementMap.delete(firstItem);
+                            firstElement.remove();
+                            this.#firstRenderedIndex++;
+                            
+                            this.#elementPool.push(firstElement);
+                        }
+                    }
                 }
-
-                //fixing the small padding innacuracies when the first item is rendered
-                if (this.#firstRenderedIndex === 0) {
-                    virtualContainer.style.paddingTop = '0px';
-                }
-            }, {
-                root: div,
-                rootMargin: this.#calculateRootMargin(div),
-                threshold: 0.0
-            });
-            
-            for (let i = 0; i < this.#initialRenderCount && i < this.#itemsArray.length; i++) {
-                const item = this.#itemsArray[i];
-                
-                const ctl = this.createItemContainer();
-                const template = this.#getItemTemplateContent(item);
-                ctl.append(template.cloneNode(true));
-                ctl.model = item;
-                
-                const slotName = 'i-' + this.#slotCount++;
-                ctl.slot = slotName;
-                this.appendChild(ctl);
-                
-                const slot = document.createElement('slot');
-                slot.name = slotName;
-                virtualContainer.appendChild(slot);
-                
-                this.#itemToElementMap.set(item, ctl);
-                this.#observer.observe(ctl);
             }
-            requestAnimationFrame(() => {
+            //handling the case where the viewport becomes empty
+            if (this.#isViewportEmpty()) {
+                console.log('no items are visible');
+                if (this.#isScrolling) {
+                    this.#pendingEmptyViewportCheck = true;
+                } else {
+                    this.#handleEmptyViewport();
+                }
+            }
+            //fixing the small padding innacuracies when the last item is rendered
+            if (this.#lastRenderedIndex === this.#itemsArray.length - 1) {
+                virtualContainer.style.paddingBottom = '0px';
+            }
+            //fixing the small padding innacuracies when the first item is rendered
+            if (this.#firstRenderedIndex === 0) {
                 virtualContainer.style.paddingTop = '0px';
-                virtualContainer.style.paddingBottom = `${this.#estimatedTotalHeight - this.#totalRenderedHeight}px`;
-            });
+            }
+        }, {
+            root: div,
+            rootMargin: this.#calculateRootMargin(div),
+            threshold: 0.0
+        });
+        
+        for (let i = 0; i < this.#initialRenderCount && i < this.#itemsArray.length; i++) {
+            const item = this.#itemsArray[i];
+            
+            const ctl = this.createItemContainer();
+            const template = this.#getItemTemplateContent(item);
+            ctl.append(template.cloneNode(true));
+            ctl.model = item;
+            
+            const slotName = 'i-' + this.#slotCount++;
+            ctl.slot = slotName;
+            this.appendChild(ctl);
+            
+            const slot = document.createElement('slot');
+            slot.name = slotName;
+            virtualContainer.appendChild(slot);
+            
+            this.#itemToElementMap.set(item, ctl);
+            this.#observer.observe(ctl);
         }
+        executeQueuedTasks();
+
+        virtualContainer.style.paddingTop = '0px';
+        virtualContainer.style.paddingBottom = `${this.#estimatedTotalHeight - this.#totalRenderedHeight}px`;
     }
     #renderItemAtIndex(index: number, insertAtBeginning: boolean = false): BindableControl | null {
         if (index < 0 || index >= this.#itemsArray.length || this.#itemToElementMap.has(this.#itemsArray[index])) {
@@ -510,29 +475,14 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         let ctl: BindableControl;
         if (this.#elementPool.length > 0) {
             ctl = this.#elementPool.pop()!;
-            
+          
             ctl.innerHTML = '';
-            
-            (ctl as HTMLElement).style.height = '';
-            (ctl as HTMLElement).style.minHeight = '';
-            (ctl as HTMLElement).style.maxHeight = '';
-            // Add any other style resets
         } else {
             ctl = this.createItemContainer();
         }
-        
         const template = this.#getItemTemplateContent(item);
         ctl.append(template.cloneNode(true));
         ctl.model = item;
-        
-        //apply the saved styles to the recycled item
-        const savedStyles = this.#itemStyleMap.get(item);
-        if (savedStyles) {
-            const element = ctl as HTMLElement;
-            for (const [property, value] of Object.entries(savedStyles)) {
-                element.style[property as any] = value;
-            }
-        }
         
         //create a new slot and insert the item into the dom
         const slotName = 'i-' + this.#slotCount++;
@@ -946,23 +896,6 @@ export class ItemsControl extends HtmlControl implements HtmlControlBindableProp
         const viewportHeight = container.clientHeight;
         const margin = Math.round(viewportHeight / 3);
         return `${margin}px 0px ${margin}px 0px`;
-    }
-
-    updateItemStyle(item: any, property: string, value: string): void {
-        let styles = this.#itemStyleMap.get(item);
-        if (!styles) {
-            styles = {};
-            this.#itemStyleMap.set(item, styles);
-        }
-        styles[property] = value;
-        
-        const element = this.#itemToElementMap.get(item);
-        if (element) {
-            (element as HTMLElement).style[property as any] = value;
-        }
-    }
-    getItemStyles(item: any): Record<string, string> | undefined {
-        return this.#itemStyleMap.get(item);
     }
 
     #initScrollHandlers(): void {

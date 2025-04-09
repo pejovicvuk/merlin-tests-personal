@@ -63,7 +63,7 @@ class TextModel {
     // disable
     enabled = true;
 
-    array = toTracked(Array.from({ length: 100000 }, (_, i) => {
+    array = toTracked(Array.from({ length: 500 }, (_, i) => {
         // Create items with varying content to produce different heights
         const type = i % 5; // Create 5 different types of items
         
@@ -147,33 +147,3 @@ textModel.array[4] = {
 };
 console.log("Modified size of element at index 4");
 
-await sleepAsync(1000);
-const itemsControl = document.querySelector('items-control');
-if (itemsControl) {
-  // Access the items property using type assertion
-  const items = (itemsControl as any).items;
-  
-  if (items) {
-    // Find all model-control elements in the document
-    const modelControls = document.querySelectorAll('model-control');
-    
-    // Find the element that corresponds to the 5th item in the array
-    let fifthElement = null;
-    for (const element of modelControls) {
-      const model = (element as any).model;
-      if (model && model === items[4]) {
-        fifthElement = element;
-        break;
-      }
-    }
-    
-    if (fifthElement) {
-      (fifthElement as HTMLElement).style.height = '200px';
-      console.log("Directly modified CSS height of element at index 4");
-    } else {
-      console.log("Could not find the element for item at index 4");
-    }
-  } else {
-    console.log("Could not access items property");
-  }
-}
